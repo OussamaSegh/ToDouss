@@ -1,0 +1,29 @@
+{
+  "name": "@todouss/db",
+  "version": "0.0.1",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts"
+  },
+  "scripts": {
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio",
+    "db:seed": "tsx src/seed.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.8.2",
+    "prisma": "^6.8.2"
+  },
+  "devDependencies": {
+    "@todouss/tsconfig": "workspace:*",
+    "tsx": "^4.19.4",
+    "typescript": "^5"
+  },
+  "prisma": {
+    "schema": "prisma/schema.prisma"
+  }
+}

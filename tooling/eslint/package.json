@@ -1,0 +1,18 @@
+{
+  "name": "@todouss/eslint-config",
+  "version": "0.0.1",
+  "private": true,
+  "exports": {
+    "./base": "./src/base.js",
+    "./next": "./src/next.js",
+    "./node": "./src/node.js"
+  },
+  "dependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.32.0",
+    "@typescript-eslint/parser": "^8.32.0",
+    "eslint-plugin-import": "^2.31.0"
+  },
+  "peerDependencies": {
+    "eslint": "^9.0.0"
+  }
+}
