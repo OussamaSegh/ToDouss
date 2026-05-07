@@ -3,7 +3,6 @@
 export const dynamic = "force-dynamic";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { trpc } from "@/lib/trpc/provider";
 
@@ -17,11 +16,16 @@ const TEMPLATES = [
 ];
 
 export default function OnboardingPage() {
-  const router = useRouter();
   const { user } = useUser();
   const [step, setStep] = useState<Step>(1);
-  const [workspaceName, setWorkspaceName] = useState(user?.fullName ? `${user.fullName}'s Workspace` : "My Workspace");
-  const [slug, setSlug] = useState("");
+
+  // Compute default name from Clerk user; allow override once the user types
+  const computedDefault = user?.fullName ? `${user.fullName}'s Workspace` : "My Workspace";
+  const [overrideName, setOverrideName] = useState<string | null>(null);
+  const [overrideSlug, setOverrideSlug] = useState<string | null>(null);
+  const workspaceName = overrideName ?? computedDefault;
+  const slug = overrideSlug ?? generateSlug(workspaceName);
+
   const [template, setTemplate] = useState("personal");
   const [error, setError] = useState("");
 
@@ -38,8 +42,8 @@ export default function OnboardingPage() {
   }
 
   function handleNameChange(value: string) {
-    setWorkspaceName(value);
-    setSlug(generateSlug(value));
+    setOverrideName(value);
+    setOverrideSlug(generateSlug(value));
   }
 
   async function handleFinish() {
@@ -50,9 +54,10 @@ export default function OnboardingPage() {
         slug: slug || generateSlug(workspaceName),
       });
       await completeOnboarding.mutateAsync({ workspaceId: workspace.id });
-      // Update Clerk session to set onboarded = true
-      await user?.reload();
-      router.push(`/${workspace.slug}/inbox`);
+      // Set the onboarded cookie via a server endpoint so the middleware can
+      // read it synchronously on the next request (avoids Clerk JWT cache lag).
+      await fetch("/api/auth/set-onboarded", { method: "POST" });
+      window.location.href = `/${workspace.slug}/inbox`;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Something went wrong";
       setError(msg);
@@ -121,7 +126,7 @@ export default function OnboardingPage() {
                   <input
                     type="text"
                     value={slug}
-                    onChange={(e) => setSlug(generateSlug(e.target.value))}
+                    onChange={(e) => setOverrideSlug(generateSlug(e.target.value))}
                     className="flex-1 px-3 py-2 text-sm bg-transparent focus:outline-none"
                     placeholder="acme-corp"
                   />

@@ -14,6 +14,8 @@ import {
   Folder,
 } from "lucide-react";
 import type { WorkspaceData, ProjectData, UserData } from "@/types/workspace";
+import { useTaskStore } from "@/stores/task-store";
+import { trpc } from "@/lib/trpc/provider";
 
 interface SidebarProps {
   workspace: WorkspaceData;
@@ -29,8 +31,16 @@ const NAV_ITEMS = (slug: string) => [
   { href: `/${slug}/search`, icon: Search, label: "Search" },
 ];
 
-export function Sidebar({ workspace, projects, currentUser }: SidebarProps) {
+export function Sidebar({ workspace, projects: initialProjects, currentUser }: SidebarProps) {
   const pathname = usePathname();
+  const openNewProject = useTaskStore((s) => s.openNewProject);
+
+  // Subscribe to live project list so the sidebar reflects optimistic creates
+  const { data: liveProjects } = trpc.project.list.useQuery(
+    { workspaceId: workspace.id },
+    { initialData: initialProjects },
+  );
+  const projects = liveProjects ?? initialProjects;
 
   return (
     <aside className="flex h-full w-60 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground shrink-0">
@@ -71,7 +81,12 @@ export function Sidebar({ workspace, projects, currentUser }: SidebarProps) {
             <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Projects
             </span>
-            <button className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
+            <button
+              type="button"
+              onClick={openNewProject}
+              title="Create project"
+              className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+            >
               <Plus className="h-3.5 w-3.5" />
             </button>
           </div>

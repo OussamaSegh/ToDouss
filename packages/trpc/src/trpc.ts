@@ -36,11 +36,20 @@ export const workspaceProcedure = protectedProcedure
     return input as { workspaceId: string } & Record<string, unknown>;
   })
   .use(async ({ ctx, input, next }) => {
+    // ctx.userId is the Clerk ID — look up the DB User row first
+    const dbUser = await ctx.db.user.findUnique({
+      where: { clerkId: ctx.userId! },
+      select: { id: true },
+    });
+    if (!dbUser) {
+      throw new TRPCError({ code: "UNAUTHORIZED", message: "User not found in database" });
+    }
+
     const member = await ctx.db.workspaceMember.findUnique({
       where: {
         workspaceId_userId: {
           workspaceId: input.workspaceId,
-          userId: ctx.userId!,
+          userId: dbUser.id,
         },
       },
       include: { workspace: true },
