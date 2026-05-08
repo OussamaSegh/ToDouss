@@ -118,6 +118,20 @@ The web app ships a web app manifest and static icons under `apps/web/public/`. 
 
 ---
 
+## Deploying to Vercel
+
+This repo pins **pnpm 10** (`packageManager` + `engines.pnpm` in the root `package.json`) and uses **lockfile v9**. Vercel’s default pnpm is older, so installs are driven by **Corepack** via `vercel.json`.
+
+1. **Node.js 20+** — In the Vercel project: **Settings → General → Node.js Version** → `20.x` (or newer LTS you support).
+2. **Root Directory** (choose one and keep it consistent with which `vercel.json` applies):
+   - **Repository root** (`.`) — uses the root [`vercel.json`](vercel.json). Set the **Framework Preset** to Next.js only if Vercel correctly detects `apps/web`; you may need a custom **Build Command** such as `pnpm exec turbo run build --filter=@todouss/web` and the correct app root per [Vercel’s Turborepo guide](https://vercel.com/docs/monorepos/turborepo).
+   - **`apps/web`** (recommended for a single Next app) — uses [`apps/web/vercel.json`](apps/web/vercel.json). Install runs from the monorepo root (`cd ../..`) so workspaces and the lockfile resolve correctly.
+3. **Environment variables** — Add production values from [`.env.example`](.env.example) (at least `DATABASE_URL`, Clerk keys, and `NEXT_PUBLIC_APP_URL` pointing at your Vercel URL).
+
+The install step runs `pnpm install --frozen-lockfile` and then `pnpm db:generate` so Prisma Client is present before `next build`. Apply schema changes in production with your chosen workflow (`prisma migrate deploy` in CI, Supabase migrations, etc.).
+
+---
+
 ## Contributing
 
 Contributions are welcome.
