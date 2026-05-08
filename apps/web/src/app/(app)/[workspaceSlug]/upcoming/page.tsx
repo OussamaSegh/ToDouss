@@ -1,19 +1,18 @@
 "use client";
 
-import { CalendarDays } from "lucide-react";
+import { UiIcon } from "@todouss/ui";
+import { PageHeader } from "@/components/shared/page-header";
+import { PageContainer } from "@/components/shared/page-container";
 import { TaskList } from "@/components/tasks/task-list";
 
 export default function UpcomingPage() {
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-14 items-center border-b border-border px-6 shrink-0">
-        <div className="flex items-center gap-2">
-          <CalendarDays className="h-5 w-5 text-muted-foreground" />
-          <h1 className="text-lg font-semibold">Upcoming</h1>
-        </div>
-      </div>
-      <div className="flex-1 overflow-auto p-4">
-        <TaskList filter="upcoming" />
+      <PageHeader title="Upcoming" icon={<UiIcon name="upcoming" className="h-5 w-5 text-muted-foreground" />} />
+      <div className="flex-1 overflow-auto">
+        <PageContainer>
+          <TaskList filter="upcoming" />
+        </PageContainer>
       </div>
     </div>
   );

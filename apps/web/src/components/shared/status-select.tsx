@@ -12,33 +12,33 @@ const STATUS_CONFIG: Record<
 > = {
   INBOX: {
     label: "Inbox",
-    circleClass: "border-gray-400",
-    ringClass: "border-gray-300",
+    circleClass: "border-[var(--status-inbox-border)] bg-[var(--status-inbox-bg)]",
+    ringClass: "border-[var(--status-inbox-border)]",
   },
   TODO: {
     label: "To Do",
-    circleClass: "border-gray-400",
-    ringClass: "border-gray-300",
+    circleClass: "border-[var(--status-todo-border)] bg-[var(--status-todo-bg)]",
+    ringClass: "border-[var(--status-todo-border)]",
   },
   IN_PROGRESS: {
     label: "In Progress",
-    circleClass: "border-blue-500 bg-blue-50",
-    ringClass: "border-blue-400",
+    circleClass: "border-[var(--status-progress-border)] bg-[var(--status-progress-bg)]",
+    ringClass: "border-[var(--status-progress-border)]",
   },
   IN_REVIEW: {
     label: "In Review",
-    circleClass: "border-purple-500 bg-purple-50",
-    ringClass: "border-purple-400",
+    circleClass: "border-[var(--status-review-border)] bg-[var(--status-review-bg)]",
+    ringClass: "border-[var(--status-review-border)]",
   },
   DONE: {
     label: "Done",
-    circleClass: "bg-green-500 border-green-500",
-    ringClass: "border-green-400",
+    circleClass: "bg-[var(--status-done-bg)] border-[var(--status-done-border)]",
+    ringClass: "border-[var(--status-done-border)]",
   },
   CANCELLED: {
     label: "Cancelled",
-    circleClass: "bg-gray-300 border-gray-300",
-    ringClass: "border-gray-200",
+    circleClass: "bg-[var(--status-cancelled-bg)] border-[var(--status-cancelled-border)]",
+    ringClass: "border-[var(--status-cancelled-border)]",
   },
 };
 
@@ -148,10 +148,10 @@ interface StatusCheckboxProps {
 }
 
 const PRIORITY_BORDER: Record<string, string> = {
-  P1: "border-red-500 hover:bg-red-50",
-  P2: "border-orange-500 hover:bg-orange-50",
-  P3: "border-blue-500 hover:bg-blue-50",
-  P4: "border-muted-foreground/40 hover:border-primary hover:bg-muted/40",
+  P1: "border-[var(--priority-p1-border)] hover:bg-[var(--priority-p1-bg)]",
+  P2: "border-[var(--priority-p2-border)] hover:bg-[var(--priority-p2-bg)]",
+  P3: "border-[var(--priority-p3-border)] hover:bg-[var(--priority-p3-bg)]",
+  P4: "border-[var(--priority-p4-border)] hover:bg-[var(--priority-p4-bg)]",
 };
 
 export function StatusCheckbox({ status, priority, onChange, className }: StatusCheckboxProps) {
@@ -168,7 +168,7 @@ export function StatusCheckbox({ status, priority, onChange, className }: Status
       className={cn(
         "h-4 w-4 rounded-full border-2 shrink-0 transition-colors flex items-center justify-center",
         isDone || isCancelled
-          ? "bg-green-500 border-green-500"
+          ? "bg-[var(--status-done-bg)] border-[var(--status-done-border)]"
           : PRIORITY_BORDER[priority] ?? PRIORITY_BORDER.P4,
         className,
       )}

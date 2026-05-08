@@ -62,8 +62,6 @@ function SortableTaskItem({
   workspaceId: string;
 }) {
   const {
-    attributes,
-    listeners,
     setNodeRef,
     transform,
     transition,
@@ -77,7 +75,7 @@ function SortableTaskItem({
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+    <div ref={setNodeRef} style={style}>
       <TaskItem task={task} workspaceId={workspaceId} />
     </div>
   );

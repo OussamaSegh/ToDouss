@@ -33,6 +33,7 @@ export function QuickAdd({
   const [title, setTitle] = useState("");
   const [detectedDate, setDetectedDate] = useState<Date | null>(null);
   const [cleanTitle, setCleanTitle] = useState("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const createTask = useCreateTask();
 
@@ -67,29 +68,33 @@ export function QuickAdd({
     parseTitle(value);
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     const finalTitle = (detectedDate ? cleanTitle : title).trim();
     if (!finalTitle) return;
-
-    createTask.mutate({
-      workspaceId,
-      projectId: projectId ?? undefined,
-      title: finalTitle,
-      status: defaultStatus,
-      priority: "P4",
-      dueDate: detectedDate ?? undefined,
-    });
-
-    setTitle("");
-    setDetectedDate(null);
-    setCleanTitle("");
-    onClose();
+    setSubmitError(null);
+    try {
+      await createTask.mutateAsync({
+        workspaceId,
+        projectId: projectId ?? undefined,
+        title: finalTitle,
+        status: defaultStatus,
+        priority: "P4",
+        dueDate: detectedDate ?? undefined,
+      });
+      setTitle("");
+      setDetectedDate(null);
+      setCleanTitle("");
+      onClose();
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Failed to create task";
+      setSubmitError(msg);
+    }
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter") {
       e.preventDefault();
-      handleSubmit();
+      void handleSubmit();
     }
     if (e.key === "Escape") {
       e.preventDefault();
@@ -117,7 +122,7 @@ export function QuickAdd({
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
-            onClick={handleSubmit}
+            onClick={() => void handleSubmit()}
             disabled={!title.trim() || createTask.isPending}
             className={cn(
               "flex h-6 w-6 items-center justify-center rounded transition-colors",
@@ -154,6 +159,11 @@ export function QuickAdd({
           >
             <X className="h-3 w-3" />
           </button>
+        </div>
+      )}
+      {submitError && (
+        <div className="px-3 pb-2 text-xs text-destructive">
+          {submitError}
         </div>
       )}
     </div>

@@ -15,7 +15,7 @@ export default function LandingPage() {
         <p className="text-xl text-muted-foreground max-w-xl leading-relaxed">
           Beautifully designed task management for individuals and teams. Fast, focused, and powerful — the way productivity software should be.
         </p>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center justify-center gap-4">
           <Link
             href="/sign-up"
             className="rounded-lg bg-primary px-6 py-3 text-base font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
@@ -23,13 +23,26 @@ export default function LandingPage() {
             Start for free
           </Link>
           <Link
-            href="/pricing"
+            href="/sign-in"
             className="rounded-lg border border-border px-6 py-3 text-base font-medium hover:bg-muted transition-colors"
           >
-            View pricing
+            Sign in
           </Link>
         </div>
-        <p className="text-sm text-muted-foreground">Free forever. No credit card required.</p>
+        <p className="text-sm text-muted-foreground max-w-md">
+          ToDouss is free to use — all features, no trials, no credit card.
+        </p>
+      </section>
+
+      {/* Always free */}
+      <section id="always-free" className="border-t border-border py-16 px-6 bg-muted/30">
+        <div className="max-w-3xl mx-auto text-center space-y-3">
+          <h2 className="text-2xl font-bold">Built to stay free</h2>
+          <p className="text-muted-foreground leading-relaxed">
+            No surprise paywalls — we&apos;re focused on a great todo experience for everyone. Create workspaces, invite your team,
+            and use every view without a subscription.
+          </p>
+        </div>
       </section>
 
       {/* Features */}
@@ -60,13 +73,14 @@ export default function LandingPage() {
               },
               {
                 icon: "🔍",
-                title: "Powerful search",
-                description: "Find anything across all tasks, comments, and projects instantly.",
+                title: "Quick search",
+                description: "Search tasks by title, description, or comment text across your workspace.",
               },
               {
                 icon: "⌨️",
                 title: "Keyboard-first",
-                description: "Every action has a shortcut. Power users feel right at home.",
+                description:
+                  "Command palette (⌘K or Ctrl+K), shortcuts (?), quick-add — power users stay in flow.",
               },
             ].map((feature) => (
               <div key={feature.title} className="space-y-3">
@@ -83,7 +97,9 @@ export default function LandingPage() {
       <section className="border-t border-border py-24 px-6 text-center">
         <div className="max-w-2xl mx-auto space-y-6">
           <h2 className="text-4xl font-bold">Ready to get things done?</h2>
-          <p className="text-muted-foreground text-lg">Join thousands of teams using ToDouss to stay organized and move fast.</p>
+          <p className="text-muted-foreground text-lg">
+            Jump in — it&apos;s free, and takes less than a minute to set up your first workspace.
+          </p>
           <Link
             href="/sign-up"
             className="inline-flex rounded-lg bg-primary px-8 py-3 text-base font-medium text-primary-foreground hover:bg-primary/90 transition-colors"

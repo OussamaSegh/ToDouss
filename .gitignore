@@ -45,3 +45,8 @@ Thumbs.db
 coverage
 playwright-report
 test-results
+
+# E2E testing artifacts
+e2e-runner/
+e2e-screenshots/
+e2e-test.mjs

@@ -10,23 +10,23 @@ const PRIORITY_CONFIG: Record<
 > = {
   P1: {
     label: "Urgent",
-    dotClass: "bg-red-500",
-    badgeClass: "text-red-600 bg-red-50 border-red-200",
+    dotClass: "bg-[var(--priority-p1-dot)]",
+    badgeClass: "text-[var(--priority-p1-fg)] bg-[var(--priority-p1-bg)] border-[var(--priority-p1-border)]",
   },
   P2: {
     label: "High",
-    dotClass: "bg-orange-500",
-    badgeClass: "text-orange-600 bg-orange-50 border-orange-200",
+    dotClass: "bg-[var(--priority-p2-dot)]",
+    badgeClass: "text-[var(--priority-p2-fg)] bg-[var(--priority-p2-bg)] border-[var(--priority-p2-border)]",
   },
   P3: {
     label: "Medium",
-    dotClass: "bg-blue-500",
-    badgeClass: "text-blue-600 bg-blue-50 border-blue-200",
+    dotClass: "bg-[var(--priority-p3-dot)]",
+    badgeClass: "text-[var(--priority-p3-fg)] bg-[var(--priority-p3-bg)] border-[var(--priority-p3-border)]",
   },
   P4: {
     label: "Low",
-    dotClass: "bg-gray-400",
-    badgeClass: "text-gray-500 bg-gray-50 border-gray-200",
+    dotClass: "bg-[var(--priority-p4-dot)]",
+    badgeClass: "text-[var(--priority-p4-fg)] bg-[var(--priority-p4-bg)] border-[var(--priority-p4-border)]",
   },
 };
 

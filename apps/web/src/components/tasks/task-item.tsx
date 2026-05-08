@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "@todouss/ui";
+import { cn, UiIcon } from "@todouss/ui";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@todouss/trpc";
 import { useTaskStore } from "@/stores/task-store";
@@ -33,6 +33,7 @@ export function TaskItem({ task, workspaceId, className }: TaskItemProps) {
   const isDone = task.status === "DONE";
   const isCancelled = task.status === "CANCELLED";
   const dueDateInfo = task.dueDate ? formatDueDate(new Date(task.dueDate)) : null;
+  const commentCount = task._count?.comments ?? 0;
 
   function handleToggleStatus() {
     updateTask.mutate({
@@ -113,6 +114,13 @@ export function TaskItem({ task, workspaceId, className }: TaskItemProps) {
             )}
           >
             {dueDateInfo.label}
+          </span>
+        )}
+
+        {commentCount > 0 && (
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+            <UiIcon name="notification" className="h-3 w-3" />
+            {commentCount}
           </span>
         )}
       </div>

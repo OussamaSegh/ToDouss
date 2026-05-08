@@ -1,4 +1,4 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@todouss/db";
 import { AppShell } from "@/components/layout/app-shell";
@@ -19,20 +19,6 @@ export default async function WorkspaceLayout({
   const dbUser = await db.user.findUnique({ where: { clerkId: userId } });
   if (!dbUser) redirect("/sign-in");
 
-  const workspace = await db.workspace.findUnique({
-    where: { slug: workspaceSlug },
-    include: { members: { where: { userId: dbUser.id } } },
-  });
-
-  if (!workspace || workspace.members.length === 0) {
-    redirect("/onboarding");
-  }
-
-  const projects = await db.project.findMany({
-    where: { workspaceId: workspace.id },
-    orderBy: { sortOrder: "asc" },
-  });
-
   const memberships = await db.workspaceMember.findMany({
     where: { userId: dbUser.id },
     include: { workspace: true },
@@ -52,6 +38,25 @@ export default async function WorkspaceLayout({
     role: m.role as WorkspaceData["role"],
   }));
 
+  const workspace = await db.workspace.findUnique({
+    where: { slug: workspaceSlug },
+    include: { members: { where: { userId: dbUser.id } } },
+  });
+
+  if (!workspace || workspace.members.length === 0) {
+    if (memberships.length === 0) {
+      redirect("/onboarding");
+    }
+    notFound();
+  }
+
+  const currentMembership = workspaces.find((w) => w.id === workspace.id);
+
+  const projects = await db.project.findMany({
+    where: { workspaceId: workspace.id },
+    orderBy: { sortOrder: "asc" },
+  });
+
   return (
     <AppShell
       workspace={{
@@ -64,6 +69,7 @@ export default async function WorkspaceLayout({
         storageUsed: workspace.storageUsed,
         createdAt: workspace.createdAt,
         updatedAt: workspace.updatedAt,
+        role: currentMembership?.role,
       }}
       projects={projects.map((p) => ({
         id: p.id,

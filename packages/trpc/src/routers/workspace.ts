@@ -3,36 +3,26 @@ import { z } from "zod";
 import { clerkClient } from "@clerk/nextjs/server";
 import { createWorkspaceSchema, updateWorkspaceSchema } from "@todouss/validators";
 import { createTRPCRouter, protectedProcedure, workspaceProcedure } from "../trpc";
-
-/** Ensures a DB user row exists for the current Clerk user (webhook fallback). */
-async function ensureDbUser(ctx: { db: import("@todouss/db").PrismaClient; userId: string | null | undefined }) {
-  if (!ctx.userId) throw new TRPCError({ code: "UNAUTHORIZED" });
-  const existing = await ctx.db.user.findUnique({ where: { clerkId: ctx.userId } });
-  if (existing) return existing;
-
-  // Webhook hasn't synced yet — fetch from Clerk and create
-  const client = await clerkClient();
-  const clerkUser = await client.users.getUser(ctx.userId);
-  const primaryEmail = clerkUser.emailAddresses.find(
-    (e) => e.id === clerkUser.primaryEmailAddressId,
-  )?.emailAddress;
-  if (!primaryEmail) throw new TRPCError({ code: "BAD_REQUEST", message: "No primary email on Clerk user" });
-
-  return ctx.db.user.create({
-    data: {
-      clerkId: ctx.userId,
-      email: primaryEmail,
-      name: [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") || null,
-      avatarUrl: clerkUser.imageUrl || null,
-    },
-  });
-}
+import { ensureDbUser } from "../lib/ensure-db-user";
 
 export const workspaceRouter = createTRPCRouter({
   create: protectedProcedure.input(createWorkspaceSchema).mutation(async ({ ctx, input }) => {
-    const existing = await ctx.db.workspace.findUnique({ where: { slug: input.slug } });
+    let finalSlug = input.slug;
+    const existing = await ctx.db.workspace.findUnique({ where: { slug: finalSlug } });
     if (existing) {
-      throw new TRPCError({ code: "CONFLICT", message: "Workspace slug already taken" });
+      // Auto-resolve collisions for default/generated slugs so onboarding
+      // doesn't fail with a recoverable conflict.
+      for (let i = 2; i <= 50; i += 1) {
+        const candidate = `${input.slug}-${i}`;
+        const taken = await ctx.db.workspace.findUnique({ where: { slug: candidate } });
+        if (!taken) {
+          finalSlug = candidate;
+          break;
+        }
+      }
+      if (finalSlug === input.slug) {
+        throw new TRPCError({ code: "CONFLICT", message: "Workspace slug already taken" });
+      }
     }
 
     const dbUser = await ensureDbUser(ctx);
@@ -40,7 +30,7 @@ export const workspaceRouter = createTRPCRouter({
     const workspace = await ctx.db.workspace.create({
       data: {
         name: input.name,
-        slug: input.slug,
+        slug: finalSlug,
         ownerId: dbUser.id,
         members: {
           create: {
@@ -103,12 +93,38 @@ export const workspaceRouter = createTRPCRouter({
         data: { onboardedAt: new Date() },
       });
 
-      // Set Clerk publicMetadata so middleware lets the user through
-      const client = await clerkClient();
-      await client.users.updateUserMetadata(ctx.userId!, {
-        publicMetadata: { onboarded: true },
-      });
+      // Keep Clerk metadata aligned, but don't block onboarding completion if
+      // Clerk metadata propagation/errors are transient.
+      try {
+        const client = await clerkClient();
+        await client.users.updateUserMetadata(ctx.userId!, {
+          publicMetadata: { onboarded: true },
+        });
+      } catch (error) {
+        console.warn("Failed to update Clerk onboarding metadata", error);
+      }
 
       return { success: true };
+    }),
+
+  members: workspaceProcedure
+    .input(z.object({ workspaceId: z.string().cuid() }))
+    .query(async ({ ctx }) => {
+      const members = await ctx.db.workspaceMember.findMany({
+        where: { workspaceId: ctx.workspaceId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              clerkId: true,
+              name: true,
+              email: true,
+              avatarUrl: true,
+            },
+          },
+        },
+        orderBy: { joinedAt: "asc" },
+      });
+      return members;
     }),
 });

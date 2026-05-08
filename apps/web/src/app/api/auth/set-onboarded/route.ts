@@ -1,7 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@todouss/db";
 import { cookies } from "next/headers";
-import type { NextRequest } from "next/server";
 
 /**
  * Called client-side after completeOnboarding succeeds.
@@ -9,7 +8,7 @@ import type { NextRequest } from "next/server";
  * plain `onboarded` cookie that the middleware can read synchronously —
  * avoiding Clerk JWT cache timing issues.
  */
-export async function POST(_req: NextRequest) {
+export async function POST() {
   const { userId } = await auth();
   if (!userId) {
     return new Response("Unauthorized", { status: 401 });

@@ -3,3 +3,7 @@ export * from "./project.schema";
 export * from "./workspace.schema";
 export * from "./label.schema";
 export * from "./section.schema";
+export * from "./comment.schema";
+export * from "./invite.schema";
+export * from "./notification.schema";
+export * from "./saved-view.schema";

@@ -2,31 +2,27 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useUser } from "@clerk/nextjs";
 import { trpc } from "@/lib/trpc/provider";
 
-type Step = 1 | 2 | 3;
-
-const TEMPLATES = [
-  { id: "personal", label: "Personal", description: "Track personal tasks and goals", icon: "🏠" },
-  { id: "work", label: "Work", description: "Manage work projects and deadlines", icon: "💼" },
-  { id: "gtd", label: "GTD", description: "Getting Things Done methodology", icon: "✅" },
-  { id: "dev", label: "Software Dev", description: "Sprint boards and engineering tasks", icon: "💻" },
-];
+type Step = 1 | 2;
 
 export default function OnboardingPage() {
   const { user } = useUser();
   const [step, setStep] = useState<Step>(1);
+  const urlHost = useSyncExternalStore(
+    () => () => {},
+    () => window.location.host,
+    () => "",
+  );
 
-  // Compute default name from Clerk user; allow override once the user types
   const computedDefault = user?.fullName ? `${user.fullName}'s Workspace` : "My Workspace";
   const [overrideName, setOverrideName] = useState<string | null>(null);
   const [overrideSlug, setOverrideSlug] = useState<string | null>(null);
   const workspaceName = overrideName ?? computedDefault;
   const slug = overrideSlug ?? generateSlug(workspaceName);
 
-  const [template, setTemplate] = useState("personal");
   const [error, setError] = useState("");
 
   const createWorkspace = trpc.workspace.create.useMutation();
@@ -54,10 +50,14 @@ export default function OnboardingPage() {
         slug: slug || generateSlug(workspaceName),
       });
       await completeOnboarding.mutateAsync({ workspaceId: workspace.id });
-      // Set the onboarded cookie via a server endpoint so the middleware can
-      // read it synchronously on the next request (avoids Clerk JWT cache lag).
-      await fetch("/api/auth/set-onboarded", { method: "POST" });
-      window.location.href = `/${workspace.slug}/inbox`;
+      const setCookie = await fetch("/api/auth/set-onboarded", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!setCookie.ok) {
+        throw new Error("Could not finish sign-in setup. Try again.");
+      }
+      window.location.assign(`/${workspace.slug}/inbox`);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Something went wrong";
       setError(msg);
@@ -71,31 +71,24 @@ export default function OnboardingPage() {
       {/* Progress */}
       <div className="w-full max-w-md mb-8">
         <div className="flex items-center justify-between mb-2">
-          {[1, 2, 3].map((s) => (
-            <div key={s} className="flex items-center">
+          {[1, 2].map((s) => (
+            <div key={s} className="flex items-center flex-1">
               <div
                 className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium transition-colors ${
-                  s <= step
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground"
+                  s <= step ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
                 }`}
               >
                 {s}
               </div>
-              {s < 3 && (
-                <div
-                  className={`h-0.5 w-24 mx-1 transition-colors ${
-                    s < step ? "bg-primary" : "bg-muted"
-                  }`}
-                />
+              {s < 2 && (
+                <div className={`h-0.5 flex-1 mx-2 rounded ${s < step ? "bg-primary" : "bg-muted"}`} />
               )}
             </div>
           ))}
         </div>
-        <div className="flex justify-between text-xs text-muted-foreground">
+        <div className="flex justify-between text-xs text-muted-foreground px-1">
           <span>Workspace</span>
-          <span>Profile</span>
-          <span>Template</span>
+          <span>Confirm</span>
         </div>
       </div>
 
@@ -118,22 +111,23 @@ export default function OnboardingPage() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium block mb-1.5">URL slug</label>
+                <label className="text-sm font-medium block mb-1.5">Workspace URL</label>
                 <div className="flex items-center rounded-md border border-input bg-background overflow-hidden">
-                  <span className="px-3 py-2 text-sm text-muted-foreground bg-muted border-r border-input">
-                    todouss.com/
+                  <span className="px-3 py-2 text-xs sm:text-sm text-muted-foreground bg-muted border-r border-input shrink-0 max-w-[45%] truncate">
+                    {urlHost ? `${urlHost}/` : "…/"}
                   </span>
                   <input
                     type="text"
                     value={slug}
                     onChange={(e) => setOverrideSlug(generateSlug(e.target.value))}
-                    className="flex-1 px-3 py-2 text-sm bg-transparent focus:outline-none"
+                    className="flex-1 min-w-0 px-3 py-2 text-sm bg-transparent focus:outline-none"
                     placeholder="acme-corp"
                   />
                 </div>
               </div>
             </div>
             <button
+              type="button"
               onClick={() => setStep(2)}
               disabled={!workspaceName.trim() || !slug.trim()}
               className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -146,8 +140,11 @@ export default function OnboardingPage() {
         {step === 2 && (
           <div className="space-y-6">
             <div>
-              <h1 className="text-2xl font-bold">Set up your profile</h1>
-              <p className="text-muted-foreground mt-1">Your profile is pulled from your account. You can update it in settings.</p>
+              <h1 className="text-2xl font-bold">You&apos;re all set</h1>
+              <p className="text-muted-foreground mt-1">
+                Your workspace <span className="font-medium text-foreground">{workspaceName}</span> will be ready at /
+                <span className="font-medium text-foreground">{slug}</span>. Your profile comes from your sign-in provider.
+              </p>
             </div>
             <div className="flex items-center gap-4 p-4 rounded-lg bg-muted/50">
               {user?.imageUrl ? (
@@ -158,64 +155,24 @@ export default function OnboardingPage() {
                   {user?.firstName?.charAt(0) ?? "?"}
                 </div>
               )}
-              <div>
-                <p className="font-medium">{user?.fullName}</p>
-                <p className="text-sm text-muted-foreground">{user?.primaryEmailAddress?.emailAddress}</p>
+              <div className="min-w-0 text-left">
+                <p className="font-medium truncate">{user?.fullName}</p>
+                <p className="text-sm text-muted-foreground truncate">{user?.primaryEmailAddress?.emailAddress}</p>
               </div>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setStep(1)}
-                className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
-              >
-                Back
-              </button>
-              <button
-                onClick={() => setStep(3)}
-                className="flex-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-              >
-                Continue
-              </button>
-            </div>
-          </div>
-        )}
-
-        {step === 3 && (
-          <div className="space-y-6">
-            <div>
-              <h1 className="text-2xl font-bold">Choose a template</h1>
-              <p className="text-muted-foreground mt-1">Start with a template that fits your workflow.</p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              {TEMPLATES.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => setTemplate(t.id)}
-                  className={`flex flex-col items-start gap-2 p-4 rounded-lg border text-left transition-colors ${
-                    template === t.id
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-muted-foreground/50 hover:bg-muted/50"
-                  }`}
-                >
-                  <span className="text-2xl">{t.icon}</span>
-                  <div>
-                    <p className="font-medium text-sm">{t.label}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{t.description}</p>
-                  </div>
-                </button>
-              ))}
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <div className="flex gap-3">
               <button
-                onClick={() => setStep(2)}
+                type="button"
+                onClick={() => setStep(1)}
                 disabled={isLoading}
                 className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50"
               >
                 Back
               </button>
               <button
-                onClick={handleFinish}
+                type="button"
+                onClick={() => void handleFinish()}
                 disabled={isLoading}
                 className="flex-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
               >

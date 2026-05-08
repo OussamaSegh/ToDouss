@@ -1,15 +1,10 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { Command } from "cmdk";
-import { cn } from "@todouss/ui";
+import { cn, ProjectIcon, UiIcon } from "@todouss/ui";
 import {
-  Inbox,
-  Sun,
-  CalendarDays,
-  Plus,
-  Folder,
   X,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
@@ -37,6 +32,17 @@ export function CommandPalette() {
   const { data: projectsData } = trpc.project.list.useQuery(
     { workspaceId: workspace.id },
     { enabled: commandPaletteOpen },
+  );
+  const { data: allWorkspaces } = trpc.workspace.list.useQuery(undefined, {
+    enabled: commandPaletteOpen,
+  });
+  const modGlyph = useSyncExternalStore(
+    () => () => {},
+    () =>
+      typeof navigator !== "undefined" && navigator.platform.toUpperCase().includes("MAC")
+        ? "⌘"
+        : "Ctrl+",
+    () => "Ctrl+",
   );
 
   // Global keyboard shortcut
@@ -109,21 +115,43 @@ export function CommandPalette() {
               className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground"
             >
               <CommandItem
-                icon={<Inbox className="h-4 w-4" />}
+                icon={<UiIcon name="inbox" className="h-4 w-4" />}
                 label="Inbox"
                 onSelect={() => navigate(`/${slug}/inbox`)}
               />
               <CommandItem
-                icon={<Sun className="h-4 w-4" />}
+                icon={<UiIcon name="today" className="h-4 w-4" />}
                 label="Today"
                 onSelect={() => navigate(`/${slug}/today`)}
               />
               <CommandItem
-                icon={<CalendarDays className="h-4 w-4" />}
+                icon={<UiIcon name="upcoming" className="h-4 w-4" />}
                 label="Upcoming"
                 onSelect={() => navigate(`/${slug}/upcoming`)}
               />
+              <CommandItem
+                icon={<UiIcon name="search" className="h-4 w-4" />}
+                label="Search"
+                onSelect={() => navigate(`/${slug}/search`)}
+              />
             </Command.Group>
+
+            {/* Workspaces */}
+            {allWorkspaces && allWorkspaces.length > 1 && (
+              <Command.Group
+                heading="Workspaces"
+                className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground"
+              >
+                {allWorkspaces.map((w) => (
+                  <CommandItem
+                    key={w.id}
+                    icon={<UiIcon name="workspace" className="h-4 w-4" />}
+                    label={w.id === workspace.id ? `${w.name} (current)` : w.name}
+                    onSelect={() => navigate(`/${w.slug}/inbox`)}
+                  />
+                ))}
+              </Command.Group>
+            )}
 
             {/* Projects */}
             {projectsData && projectsData.length > 0 && (
@@ -137,10 +165,7 @@ export function CommandPalette() {
                     <CommandItem
                       key={project.id}
                       icon={
-                        <div
-                          className="h-3.5 w-3.5 rounded-sm shrink-0"
-                          style={{ backgroundColor: project.color }}
-                        />
+                        <ProjectIcon color={project.color} name={project.name} className="h-3.5 w-3.5 text-[8px]" />
                       }
                       label={project.name}
                       onSelect={() => navigate(`/${slug}/projects/${project.id}`)}
@@ -155,7 +180,7 @@ export function CommandPalette() {
               className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground"
             >
               <CommandItem
-                icon={<Plus className="h-4 w-4" />}
+                icon={<UiIcon name="list" className="h-4 w-4" />}
                 label="Create task"
                 onSelect={() => {
                   closeCommandPalette();
@@ -167,16 +192,55 @@ export function CommandPalette() {
                 }}
               />
               <CommandItem
-                icon={<Folder className="h-4 w-4" />}
+                icon={<UiIcon name="project" className="h-4 w-4" />}
                 label="Create project"
                 onSelect={() => {
                   closeCommandPalette();
                   openNewProject();
                 }}
               />
+              <CommandItem
+                icon={<UiIcon name="notification" className="h-4 w-4" />}
+                label="Open notifications"
+                onSelect={() => {
+                  closeCommandPalette();
+                  setTimeout(
+                    () =>
+                      document.dispatchEvent(
+                        new CustomEvent("todouss:open-notifications"),
+                      ),
+                    0,
+                  );
+                }}
+              />
+              <CommandItem
+                icon={<UiIcon name="notification" className="h-4 w-4" />}
+                label="Focus comment composer"
+                onSelect={() => {
+                  closeCommandPalette();
+                  setTimeout(
+                    () =>
+                      document.dispatchEvent(
+                        new CustomEvent("todouss:focus-comment"),
+                      ),
+                    0,
+                  );
+                }}
+              />
             </Command.Group>
           </Command.List>
         </Command>
+        <div className="border-t border-border bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground leading-relaxed flex flex-wrap gap-x-4 gap-y-1">
+          <span>
+            This menu: {modGlyph}K · Shortcuts{" "}
+            <span className="font-mono">?</span> · Quick add <span className="font-mono">Q</span> · New project{" "}
+            <span className="font-mono">P</span> · Notifications <span className="font-mono">N</span>
+          </span>
+          <span>
+            Detail open: <span className="font-mono">1–5</span> status ·{" "}
+            <span className="font-mono">⇧1–4</span> priority · <span className="font-mono">C</span> comments
+          </span>
+        </div>
       </div>
     </div>
   );

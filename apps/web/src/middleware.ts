@@ -5,7 +5,6 @@ const isPublicRoute = createRouteMatcher([
   "/home(.*)",
   "/sign-in(.*)",
   "/sign-up(.*)",
-  "/pricing(.*)",
   "/blog(.*)",
   "/api/webhooks(.*)",
   "/api/health",
@@ -15,14 +14,13 @@ const isOnboardingRoute = createRouteMatcher(["/onboarding(.*)"]);
 const isApiRoute = createRouteMatcher(["/api/(.*)"]);
 
 export default clerkMiddleware(async (auth, req) => {
-  const { userId, redirectToSignIn } = await auth();
-
   if (isPublicRoute(req)) return NextResponse.next();
 
-  if (!userId) return redirectToSignIn({ returnBackUrl: req.url });
+  const { userId, redirectToSignIn } = await auth();
 
   // Never redirect API routes — they must always reach their handlers
   if (isApiRoute(req)) return NextResponse.next();
+  if (!userId) return redirectToSignIn({ returnBackUrl: req.url });
 
   // Check the plain `onboarded` cookie set by /api/auth/set-onboarded.
   // This avoids JWT cache timing issues that arise when checking Clerk sessionClaims.

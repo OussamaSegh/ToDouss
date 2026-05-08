@@ -3,6 +3,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { getQueryKey } from "@trpc/react-query";
 import { trpc } from "@/lib/trpc/provider";
+import type { TaskFilterInput } from "@todouss/validators";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@todouss/trpc";
 
@@ -12,6 +13,39 @@ type TaskListItem = TaskListOutput["tasks"][number];
 type TaskGetOutput = RouterOutput["task"]["get"];
 type TodayOutput = RouterOutput["task"]["today"];
 type UpcomingOutput = RouterOutput["task"]["upcoming"];
+type CalendarOutput = RouterOutput["task"]["calendarRange"];
+type TimelineOutput = RouterOutput["task"]["timelineRange"];
+type TableOutput = RouterOutput["task"]["tableList"];
+
+function optimisticTaskMatchesTaskListQuery(
+  query: TaskFilterInput | undefined,
+  workspaceId: string,
+  task: TaskListItem,
+): boolean {
+  if (!query || query.workspaceId !== workspaceId) return false;
+  if (query.search?.trim()) return false;
+
+  if (query.projectId) {
+    if (task.projectId !== query.projectId) return false;
+  }
+
+  const statusFilter = query.status;
+  if (statusFilter?.length) {
+    if (!statusFilter.includes(task.status)) return false;
+  } else if (query.includeCompleted === false) {
+    if (task.status === "DONE" || task.status === "CANCELLED") return false;
+  }
+
+  if (query.datePreset) return false;
+  if (query.dueBefore || query.dueAfter) return false;
+  if (query.priority?.length) return false;
+  if (query.assigneeId?.length) return false;
+  if (query.labelIds?.length) return false;
+  if (query.startDateFrom || query.startDateTo) return false;
+  if (query.isRecurring !== undefined) return false;
+
+  return true;
+}
 
 // ---------------------------------------------------------------------------
 // Cache patch helpers — operate over ALL cached variations of task.list /
@@ -22,6 +56,9 @@ interface ListSnapshot {
   listEntries: Array<[readonly unknown[], TaskListOutput | undefined]>;
   todayEntries: Array<[readonly unknown[], TodayOutput | undefined]>;
   upcomingEntries: Array<[readonly unknown[], UpcomingOutput | undefined]>;
+  calendarEntries: Array<[readonly unknown[], CalendarOutput | undefined]>;
+  timelineEntries: Array<[readonly unknown[], TimelineOutput | undefined]>;
+  tableEntries: Array<[readonly unknown[], TableOutput | undefined]>;
 }
 
 function snapshotAndPatchLists(
@@ -31,10 +68,16 @@ function snapshotAndPatchLists(
   const listKey = getQueryKey(trpc.task.list);
   const todayKey = getQueryKey(trpc.task.today);
   const upcomingKey = getQueryKey(trpc.task.upcoming);
+  const calendarKey = getQueryKey(trpc.task.calendarRange);
+  const timelineKey = getQueryKey(trpc.task.timelineRange);
+  const tableKey = getQueryKey(trpc.task.tableList);
 
   const listEntries = queryClient.getQueriesData<TaskListOutput>({ queryKey: listKey });
   const todayEntries = queryClient.getQueriesData<TodayOutput>({ queryKey: todayKey });
   const upcomingEntries = queryClient.getQueriesData<UpcomingOutput>({ queryKey: upcomingKey });
+  const calendarEntries = queryClient.getQueriesData<CalendarOutput>({ queryKey: calendarKey });
+  const timelineEntries = queryClient.getQueriesData<TimelineOutput>({ queryKey: timelineKey });
+  const tableEntries = queryClient.getQueriesData<TableOutput>({ queryKey: tableKey });
 
   for (const [key, data] of listEntries) {
     if (!data) continue;
@@ -57,8 +100,29 @@ function snapshotAndPatchLists(
       .filter((t): t is UpcomingOutput[number] => t !== null);
     queryClient.setQueryData<UpcomingOutput>(key, next);
   }
+  for (const [key, data] of calendarEntries) {
+    if (!data) continue;
+    const next = data
+      .map((t) => patcher(t as TaskListItem) as unknown as CalendarOutput[number] | null)
+      .filter((t): t is CalendarOutput[number] => t !== null);
+    queryClient.setQueryData<CalendarOutput>(key, next);
+  }
+  for (const [key, data] of timelineEntries) {
+    if (!data) continue;
+    const next = data
+      .map((t) => patcher(t as TaskListItem) as unknown as TimelineOutput[number] | null)
+      .filter((t): t is TimelineOutput[number] => t !== null);
+    queryClient.setQueryData<TimelineOutput>(key, next);
+  }
+  for (const [key, data] of tableEntries) {
+    if (!data) continue;
+    const next = data
+      .map((t) => patcher(t as TaskListItem) as unknown as TableOutput[number] | null)
+      .filter((t): t is TableOutput[number] => t !== null);
+    queryClient.setQueryData<TableOutput>(key, next);
+  }
 
-  return { listEntries, todayEntries, upcomingEntries };
+  return { listEntries, todayEntries, upcomingEntries, calendarEntries, timelineEntries, tableEntries };
 }
 
 function rollbackLists(
@@ -74,6 +138,9 @@ function rollbackLists(
   for (const [key, data] of snap.upcomingEntries) {
     queryClient.setQueryData(key, data);
   }
+  for (const [key, data] of snap.calendarEntries) queryClient.setQueryData(key, data);
+  for (const [key, data] of snap.timelineEntries) queryClient.setQueryData(key, data);
+  for (const [key, data] of snap.tableEntries) queryClient.setQueryData(key, data);
 }
 
 // ---------------------------------------------------------------------------
@@ -123,15 +190,13 @@ export function useCreateTask() {
       // Insert into matching list caches (subtasks only into parent's projectId list)
       for (const [key, data] of listEntries) {
         if (!data) continue;
-        // The query input is the second element of key tuple; safe to narrow.
-        const queryInput = (key as ReadonlyArray<unknown>)[1] as
-          | { input?: { workspaceId?: string; projectId?: string } }
-          | undefined;
-        const inputData = queryInput?.input;
-        if (!inputData || inputData.workspaceId !== input.workspaceId) continue;
-        if (inputData.projectId && inputData.projectId !== optimisticTask.projectId) continue;
+        const rawInput = (key as readonly unknown[])[1] as { input?: unknown } | undefined;
+        const inputData = rawInput?.input as TaskFilterInput | undefined;
+
         // Don't pollute filtered lists with subtasks
         if (optimisticTask.parentTaskId) continue;
+        if (!optimisticTaskMatchesTaskListQuery(inputData, input.workspaceId, optimisticTask)) continue;
+
         queryClient.setQueryData<TaskListOutput>(key, {
           ...data,
           tasks: [optimisticTask, ...data.tasks],
@@ -152,6 +217,9 @@ export function useCreateTask() {
       void utils.task.list.invalidate({ workspaceId: input.workspaceId });
       void utils.task.today.invalidate({ workspaceId: input.workspaceId });
       void utils.task.upcoming.invalidate({ workspaceId: input.workspaceId });
+      void utils.task.calendarRange.invalidate();
+      void utils.task.timelineRange.invalidate();
+      void utils.task.tableList.invalidate();
       if (input.parentTaskId) {
         void utils.task.get.invalidate({
           workspaceId: input.workspaceId,
@@ -235,6 +303,9 @@ export function useUpdateTask() {
       void utils.task.get.invalidate({ workspaceId: input.workspaceId, taskId: input.id });
       void utils.task.today.invalidate({ workspaceId: input.workspaceId });
       void utils.task.upcoming.invalidate({ workspaceId: input.workspaceId });
+      void utils.task.calendarRange.invalidate();
+      void utils.task.timelineRange.invalidate();
+      void utils.task.tableList.invalidate();
     },
   });
 }
@@ -265,6 +336,9 @@ export function useDeleteTask() {
       void utils.task.list.invalidate({ workspaceId: input.workspaceId });
       void utils.task.today.invalidate({ workspaceId: input.workspaceId });
       void utils.task.upcoming.invalidate({ workspaceId: input.workspaceId });
+      void utils.task.calendarRange.invalidate();
+      void utils.task.timelineRange.invalidate();
+      void utils.task.tableList.invalidate();
     },
   });
 }
@@ -317,6 +391,9 @@ export function useReorderTask() {
         void utils.task.list.invalidate({ workspaceId: wid });
         void utils.task.today.invalidate({ workspaceId: wid });
         void utils.task.upcoming.invalidate({ workspaceId: wid });
+        void utils.task.calendarRange.invalidate();
+        void utils.task.timelineRange.invalidate();
+        void utils.task.tableList.invalidate();
       } else {
         void utils.task.list.invalidate();
       }

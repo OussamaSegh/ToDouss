@@ -1,32 +1,118 @@
 import { TRPCError } from "@trpc/server";
+import { Prisma } from "@todouss/db";
 import { z } from "zod";
 import {
   createTaskSchema,
   updateTaskSchema,
   reorderTaskSchema,
   taskFilterSchema,
+  taskRangeSchema,
 } from "@todouss/validators";
 import { createTRPCRouter, workspaceProcedure } from "../trpc";
+import { ensureDbUser } from "../lib/ensure-db-user";
+import { parseMentionUserIdsFromBody } from "../lib/mentions";
+import {
+  buildRecurrenceTaskPayload,
+  createNextRecurringInstance,
+  parseRecurrenceRule,
+} from "../lib/recurrence";
+
+function buildDatePresetRange(preset: string) {
+  const now = new Date();
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  if (preset === "TODAY") {
+    end.setDate(end.getDate() + 1);
+    return { gte: start, lt: end };
+  }
+  if (preset === "TOMORROW") {
+    const t = new Date(start);
+    t.setDate(t.getDate() + 1);
+    const t2 = new Date(t);
+    t2.setDate(t2.getDate() + 1);
+    return { gte: t, lt: t2 };
+  }
+  if (preset === "THIS_WEEK") {
+    const day = start.getDay();
+    const diff = day === 0 ? 6 : day - 1;
+    start.setDate(start.getDate() - diff);
+    end.setTime(start.getTime());
+    end.setDate(end.getDate() + 7);
+    return { gte: start, lt: end };
+  }
+  if (preset === "NEXT_7_DAYS") {
+    end.setDate(end.getDate() + 7);
+    return { gte: start, lt: end };
+  }
+  if (preset === "NEXT_30_DAYS") {
+    end.setDate(end.getDate() + 30);
+    return { gte: start, lt: end };
+  }
+  if (preset === "OVERDUE") {
+    return { lt: start };
+  }
+  return null;
+}
 
 export const taskRouter = createTRPCRouter({
   list: workspaceProcedure.input(taskFilterSchema).query(async ({ ctx, input }) => {
-    const where = {
+    const presetRange = input.datePreset ? buildDatePresetRange(input.datePreset) : null;
+    const where: Prisma.TaskWhereInput = {
       workspaceId: ctx.workspaceId,
       isArchived: input.isArchived,
-      ...(input.projectId ? { projectId: input.projectId } : {}),
-      ...(input.status?.length ? { status: { in: input.status } } : {}),
-      ...(input.priority?.length ? { priority: { in: input.priority } } : {}),
-      ...(input.assigneeId?.length ? { assigneeId: { in: input.assigneeId } } : {}),
-      ...(input.dueBefore || input.dueAfter
-        ? {
-            dueDate: {
-              ...(input.dueBefore ? { lte: input.dueBefore } : {}),
-              ...(input.dueAfter ? { gte: input.dueAfter } : {}),
-            },
-          }
-        : {}),
-      ...(input.search ? { title: { contains: input.search, mode: "insensitive" as const } } : {}),
     };
+    if (input.projectId) where.projectId = input.projectId;
+    if (input.priority?.length) where.priority = { in: input.priority };
+    if (input.assigneeId?.length) where.assigneeId = { in: input.assigneeId };
+    if (input.labelIds?.length) where.labels = { some: { labelId: { in: input.labelIds } } };
+    if (input.isRecurring !== undefined) where.isRecurring = input.isRecurring;
+    if (input.dueBefore || input.dueAfter) {
+      where.dueDate = {
+        ...(input.dueBefore ? { lte: input.dueBefore } : {}),
+        ...(input.dueAfter ? { gte: input.dueAfter } : {}),
+      };
+    }
+    if (input.startDateFrom || input.startDateTo) {
+      where.startDate = {
+        ...(input.startDateFrom ? { gte: input.startDateFrom } : {}),
+        ...(input.startDateTo ? { lte: input.startDateTo } : {}),
+      };
+    }
+    if (presetRange) where.dueDate = presetRange;
+    if (input.datePreset === "NO_DATE") where.dueDate = null;
+
+    const searchTerm = input.search?.trim();
+    const needsStatusAnd =
+      Boolean(input.status?.length) ||
+      Boolean(!input.includeCompleted) ||
+      Boolean(searchTerm);
+
+    if (needsStatusAnd) {
+      const closedStatuses = ["DONE", "CANCELLED"] as const;
+      const andParts: Prisma.TaskWhereInput[] = [
+        ...(input.status?.length ? [{ status: { in: input.status } }] : []),
+        ...(!input.includeCompleted ? [{ status: { notIn: [...closedStatuses] } }] : []),
+        ...(searchTerm
+          ? [
+              {
+                OR: [
+                  { title: { contains: searchTerm, mode: "insensitive" as const } },
+                  { description: { contains: searchTerm, mode: "insensitive" as const } },
+                  {
+                    comments: {
+                      some: {
+                        body: { contains: searchTerm, mode: "insensitive" as const },
+                      },
+                    },
+                  },
+                ],
+              },
+            ]
+          : []),
+      ];
+      if (andParts.length) where.AND = andParts;
+    }
 
     const tasks = await ctx.db.task.findMany({
       where,
@@ -64,7 +150,13 @@ export const taskRouter = createTRPCRouter({
           },
           comments: {
             orderBy: { createdAt: "asc" },
-            include: { author: { select: { id: true, name: true, avatarUrl: true } } },
+            include: {
+              author: { select: { id: true, name: true, avatarUrl: true } },
+              mentions: {
+                include: { user: { select: { id: true, name: true, avatarUrl: true } } },
+              },
+              reactions: true,
+            },
           },
           activities: {
             orderBy: { createdAt: "desc" },
@@ -80,8 +172,7 @@ export const taskRouter = createTRPCRouter({
     }),
 
   create: workspaceProcedure.input(createTaskSchema).mutation(async ({ ctx, input }) => {
-    const dbUser = await ctx.db.user.findUnique({ where: { clerkId: ctx.userId } });
-    if (!dbUser) throw new TRPCError({ code: "NOT_FOUND" });
+    const dbUser = await ensureDbUser(ctx);
 
     const maxOrder = await ctx.db.task.findFirst({
       where: { workspaceId: ctx.workspaceId, projectId: input.projectId ?? null },
@@ -89,30 +180,72 @@ export const taskRouter = createTRPCRouter({
       select: { sortOrder: true },
     });
 
-    const task = await ctx.db.task.create({
-      data: {
-        workspaceId: ctx.workspaceId,
-        projectId: input.projectId,
-        sectionId: input.sectionId,
-        parentTaskId: input.parentTaskId,
-        creatorId: dbUser.id,
-        assigneeId: input.assigneeId,
-        title: input.title,
-        description: input.description,
-        status: input.status,
-        priority: input.priority,
-        dueDate: input.dueDate,
-        dueTime: input.dueTime,
-        startDate: input.startDate,
-        sortOrder: (maxOrder?.sortOrder ?? -1) + 1,
-        labels: input.labelIds?.length
-          ? { create: input.labelIds.map((labelId) => ({ labelId })) }
-          : undefined,
-      },
-      include: {
-        labels: { include: { label: true } },
-        assignee: { select: { id: true, name: true, avatarUrl: true } },
-      },
+    const mentionIds = input.description
+      ? parseMentionUserIdsFromBody(input.description).filter((id) => id !== dbUser.id)
+      : [];
+    const mentionUsers = mentionIds.length
+      ? await ctx.db.workspaceMember.findMany({
+          where: { workspaceId: ctx.workspaceId, userId: { in: mentionIds } },
+          select: { userId: true },
+        })
+      : [];
+    const mentionUserIds = [...new Set(mentionUsers.map((m) => m.userId))];
+
+    const task = await ctx.db.$transaction(async (tx) => {
+      const created = await tx.task.create({
+        data: {
+          workspaceId: ctx.workspaceId,
+          projectId: input.projectId,
+          sectionId: input.sectionId,
+          parentTaskId: input.parentTaskId,
+          creatorId: dbUser.id,
+          assigneeId: input.assigneeId,
+          title: input.title,
+          description: input.description,
+          status: input.status,
+          priority: input.priority,
+          dueDate: input.dueDate,
+          dueTime: input.dueTime,
+          startDate: input.startDate,
+          sortOrder: (maxOrder?.sortOrder ?? -1) + 1,
+          ...buildRecurrenceTaskPayload({
+            isRecurring: input.isRecurring,
+            recurrenceRule: input.recurrenceRule,
+          }),
+          labels: input.labelIds?.length
+            ? { create: input.labelIds.map((labelId) => ({ labelId })) }
+            : undefined,
+          mentions: mentionUserIds.length
+            ? {
+                createMany: {
+                  data: mentionUserIds.map((userId) => ({ userId })),
+                  skipDuplicates: true,
+                },
+              }
+            : undefined,
+        },
+        include: {
+          labels: { include: { label: true } },
+          assignee: { select: { id: true, name: true, avatarUrl: true } },
+        },
+      });
+
+      if (mentionUserIds.length) {
+        await tx.notification.createMany({
+          data: mentionUserIds.map((userId) => ({
+            userId,
+            type: "MENTION",
+            title: `${dbUser.name ?? "Someone"} mentioned you`,
+            body: `In task: ${created.title}`,
+            meta: {
+              workspaceId: ctx.workspaceId,
+              taskId: created.id,
+            } satisfies Prisma.InputJsonValue,
+          })),
+          skipDuplicates: true,
+        });
+      }
+      return created;
     });
 
     await ctx.db.activityLog.create({
@@ -129,39 +262,88 @@ export const taskRouter = createTRPCRouter({
 
   update: workspaceProcedure.input(updateTaskSchema.extend({ workspaceId: z.string().cuid() })).mutation(
     async ({ ctx, input }) => {
-      const dbUser = await ctx.db.user.findUnique({ where: { clerkId: ctx.userId } });
-      if (!dbUser) throw new TRPCError({ code: "NOT_FOUND" });
+      const dbUser = await ensureDbUser(ctx);
 
       const existing = await ctx.db.task.findUnique({
         where: { id: input.id, workspaceId: ctx.workspaceId },
       });
       if (!existing) throw new TRPCError({ code: "NOT_FOUND" });
 
-      const { id, workspaceId: _wid, labelIds, ...data } = input;
+      const { id, workspaceId: _wid, labelIds, recurrenceRule, ...data } = input;
 
-      const task = await ctx.db.task.update({
-        where: { id, workspaceId: ctx.workspaceId },
-        data: {
-          ...data,
-          completedAt:
-            data.status === "DONE" && existing.status !== "DONE"
-              ? new Date()
-              : data.status && data.status !== "DONE"
-                ? null
-                : undefined,
-          ...(labelIds !== undefined
-            ? {
-                labels: {
-                  deleteMany: {},
-                  create: labelIds.map((labelId) => ({ labelId })),
-                },
-              }
-            : {}),
-        },
-        include: {
-          labels: { include: { label: true } },
-          assignee: { select: { id: true, name: true, avatarUrl: true } },
-        },
+      const mentionIds = data.description
+        ? parseMentionUserIdsFromBody(data.description).filter((uid) => uid !== dbUser.id)
+        : [];
+      const mentionUsers = mentionIds.length
+        ? await ctx.db.workspaceMember.findMany({
+            where: { workspaceId: ctx.workspaceId, userId: { in: mentionIds } },
+            select: { userId: true },
+          })
+        : [];
+      const mentionUserIds = [...new Set(mentionUsers.map((m) => m.userId))];
+
+      const task = await ctx.db.$transaction(async (tx) => {
+        const updated = await tx.task.update({
+          where: { id, workspaceId: ctx.workspaceId },
+          data: {
+            ...data,
+            completedAt:
+              data.status === "DONE" && existing.status !== "DONE"
+                ? new Date()
+                : data.status && data.status !== "DONE"
+                  ? null
+                  : undefined,
+            ...(labelIds !== undefined
+              ? {
+                  labels: {
+                    deleteMany: {},
+                    create: labelIds.map((labelId) => ({ labelId })),
+                  },
+                }
+              : {}),
+            ...(data.description !== undefined
+              ? {
+                  mentions: {
+                    deleteMany: { commentId: null },
+                    ...(mentionUserIds.length
+                      ? {
+                          createMany: {
+                            data: mentionUserIds.map((userId) => ({ userId })),
+                            skipDuplicates: true,
+                          },
+                        }
+                      : {}),
+                  },
+                }
+              : {}),
+            ...buildRecurrenceTaskPayload({
+              isRecurring: data.isRecurring,
+              recurrenceRule: recurrenceRule ?? undefined,
+              currentParentId: existing.recurrenceParentId,
+            }),
+          },
+          include: {
+            labels: { include: { label: true } },
+            assignee: { select: { id: true, name: true, avatarUrl: true } },
+          },
+        });
+
+        if (data.description !== undefined && mentionUserIds.length) {
+          await tx.notification.createMany({
+            data: mentionUserIds.map((userId) => ({
+              userId,
+              type: "MENTION",
+              title: `${dbUser.name ?? "Someone"} mentioned you`,
+              body: `In task: ${updated.title}`,
+              meta: {
+                workspaceId: ctx.workspaceId,
+                taskId: updated.id,
+              } satisfies Prisma.InputJsonValue,
+            })),
+            skipDuplicates: true,
+          });
+        }
+        return updated;
       });
 
       if (data.status && data.status !== existing.status) {
@@ -246,6 +428,127 @@ export const taskRouter = createTRPCRouter({
           assignee: { select: { id: true, name: true, avatarUrl: true } },
         },
         orderBy: [{ dueDate: "asc" }, { priority: "asc" }],
+      });
+    }),
+
+  calendarRange: workspaceProcedure.input(taskRangeSchema).query(({ ctx, input }) =>
+    ctx.db.task.findMany({
+      where: {
+        workspaceId: ctx.workspaceId,
+        ...(input.projectId ? { projectId: input.projectId } : {}),
+        ...(input.includeArchived ? {} : { isArchived: false }),
+        ...(input.includeCompleted ? {} : { status: { notIn: ["DONE", "CANCELLED"] } }),
+        dueDate: { gte: input.from, lte: input.to },
+        ...(input.labelIds?.length ? { labels: { some: { labelId: { in: input.labelIds } } } } : {}),
+        ...(input.assigneeId?.length ? { assigneeId: { in: input.assigneeId } } : {}),
+      },
+      include: {
+        labels: { include: { label: true } },
+        assignee: { select: { id: true, name: true, avatarUrl: true } },
+        _count: { select: { comments: true, subtasks: true, attachments: true } },
+      },
+      orderBy: [{ dueDate: "asc" }, { sortOrder: "asc" }],
+    }),
+  ),
+
+  timelineRange: workspaceProcedure.input(taskRangeSchema).query(({ ctx, input }) =>
+    ctx.db.task.findMany({
+      where: {
+        workspaceId: ctx.workspaceId,
+        ...(input.projectId ? { projectId: input.projectId } : {}),
+        ...(input.includeArchived ? {} : { isArchived: false }),
+        ...(input.includeCompleted ? {} : { status: { notIn: ["DONE", "CANCELLED"] } }),
+        OR: [
+          { startDate: { gte: input.from, lte: input.to } },
+          { dueDate: { gte: input.from, lte: input.to } },
+          {
+            AND: [
+              { startDate: { lte: input.from } },
+              { dueDate: { gte: input.to } },
+            ],
+          },
+        ],
+        ...(input.labelIds?.length ? { labels: { some: { labelId: { in: input.labelIds } } } } : {}),
+        ...(input.assigneeId?.length ? { assigneeId: { in: input.assigneeId } } : {}),
+      },
+      include: {
+        labels: { include: { label: true } },
+        assignee: { select: { id: true, name: true, avatarUrl: true } },
+        _count: { select: { comments: true, subtasks: true, attachments: true } },
+      },
+      orderBy: [{ startDate: "asc" }, { dueDate: "asc" }, { sortOrder: "asc" }],
+    }),
+  ),
+
+  tableList: workspaceProcedure.input(taskFilterSchema).query(async ({ ctx, input }) => {
+    const base = await ctx.db.task.findMany({
+      where: {
+        workspaceId: ctx.workspaceId,
+        ...(input.projectId ? { projectId: input.projectId } : {}),
+        isArchived: input.isArchived,
+      },
+      include: {
+        labels: { include: { label: true } },
+        assignee: { select: { id: true, name: true, avatarUrl: true } },
+        _count: { select: { comments: true, subtasks: true, attachments: true } },
+      },
+      orderBy: [{ dueDate: "asc" }, { priority: "asc" }, { sortOrder: "asc" }],
+      take: input.limit,
+    });
+    return base;
+  }),
+
+  generateNextRecurring: workspaceProcedure
+    .input(z.object({ workspaceId: z.string().cuid(), taskId: z.string().cuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const source = await ctx.db.task.findUnique({
+        where: { id: input.taskId, workspaceId: ctx.workspaceId },
+      });
+      if (!source) throw new TRPCError({ code: "NOT_FOUND" });
+      if (!source.isRecurring || !source.recurrenceRule) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Task is not recurring" });
+      }
+
+      const normalized = parseRecurrenceRule(source.recurrenceRule);
+      if (!normalized) throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid recurrence rule" });
+
+      const next = createNextRecurringInstance(source, normalized);
+      if (!next) return null;
+
+      const existing = await ctx.db.task.findFirst({
+        where: {
+          workspaceId: ctx.workspaceId,
+          recurrenceParentId: source.id,
+          dueDate: next.dueDate,
+        },
+      });
+      if (existing) return existing;
+
+      return ctx.db.task.create({
+        data: {
+          workspaceId: ctx.workspaceId,
+          projectId: source.projectId,
+          sectionId: source.sectionId,
+          parentTaskId: null,
+          creatorId: source.creatorId,
+          assigneeId: source.assigneeId,
+          title: source.title,
+          description: source.description,
+          status: "TODO",
+          priority: source.priority,
+          dueDate: next.dueDate,
+          dueTime: source.dueTime,
+          startDate: next.startDate,
+          sortOrder: source.sortOrder + 0.001,
+          boardOrder: source.boardOrder + 0.001,
+          isRecurring: false,
+          recurrenceParentId: source.id,
+          labels: {
+            create: (
+              await ctx.db.taskLabel.findMany({ where: { taskId: source.id }, select: { labelId: true } })
+            ).map((l) => ({ labelId: l.labelId })),
+          },
+        },
       });
     }),
 });

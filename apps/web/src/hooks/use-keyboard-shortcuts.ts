@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import { useShallow } from "zustand/react/shallow";
 import { useTaskStore } from "@/stores/task-store";
 import { useUpdateTask, useDeleteTask } from "@/hooks/use-task-mutations";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -39,25 +38,14 @@ export function useKeyboardShortcuts() {
   const updateTask = useUpdateTask();
   const deleteTask = useDeleteTask();
 
-  const {
-    selectedTaskId,
-    isDetailOpen,
-    closeDetail,
-    toggleCommandPalette,
-    closeCommandPalette,
-    commandPaletteOpen,
-    openNewProject,
-  } = useTaskStore(
-    useShallow((s) => ({
-      selectedTaskId: s.selectedTaskId,
-      isDetailOpen: s.isDetailOpen,
-      closeDetail: s.closeDetail,
-      toggleCommandPalette: s.toggleCommandPalette,
-      closeCommandPalette: s.closeCommandPalette,
-      commandPaletteOpen: s.commandPaletteOpen,
-      openNewProject: s.openNewProject,
-    })),
-  );
+  const selectedTaskId = useTaskStore((s) => s.selectedTaskId);
+  const isDetailOpen = useTaskStore((s) => s.isDetailOpen);
+  const closeDetail = useTaskStore((s) => s.closeDetail);
+  const toggleCommandPalette = useTaskStore((s) => s.toggleCommandPalette);
+  const closeCommandPalette = useTaskStore((s) => s.closeCommandPalette);
+  const openCommandPalette = useTaskStore((s) => s.openCommandPalette);
+  const commandPaletteOpen = useTaskStore((s) => s.commandPaletteOpen);
+  const openNewProject = useTaskStore((s) => s.openNewProject);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -85,6 +73,13 @@ export function useKeyboardShortcuts() {
 
       if (isInputActive()) return;
 
+      // ? — shortcuts / command palette (Shift+/ on US layouts)
+      if (e.key === "?") {
+        e.preventDefault();
+        openCommandPalette();
+        return;
+      }
+
       // q — quick add
       if (e.key === "q") {
         e.preventDefault();
@@ -96,6 +91,20 @@ export function useKeyboardShortcuts() {
       if (e.key === "p") {
         e.preventDefault();
         openNewProject();
+        return;
+      }
+
+      // c — focus comment composer in open task detail
+      if (e.key === "c" && isDetailOpen) {
+        e.preventDefault();
+        document.dispatchEvent(new CustomEvent("todouss:focus-comment"));
+        return;
+      }
+
+      // n — open notifications panel
+      if (e.key === "n") {
+        e.preventDefault();
+        document.dispatchEvent(new CustomEvent("todouss:open-notifications"));
         return;
       }
 
@@ -142,6 +151,7 @@ export function useKeyboardShortcuts() {
     closeDetail,
     toggleCommandPalette,
     closeCommandPalette,
+    openCommandPalette,
     commandPaletteOpen,
     isDetailOpen,
     selectedTaskId,

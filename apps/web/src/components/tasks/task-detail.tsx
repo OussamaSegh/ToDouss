@@ -9,6 +9,7 @@ import { StarterKit } from "@tiptap/starter-kit";
 import { Placeholder } from "@tiptap/extension-placeholder";
 import { Link } from "@tiptap/extension-link";
 import { useShallow } from "zustand/react/shallow";
+import { useUser } from "@clerk/nextjs";
 import { trpc } from "@/lib/trpc/provider";
 import { useWorkspace } from "@/lib/workspace-context";
 import { useTaskStore } from "@/stores/task-store";
@@ -21,6 +22,14 @@ import { StatusSelect, StatusCheckbox } from "@/components/shared/status-select"
 import { PriorityBadge } from "@/components/shared/priority-badge";
 import { DueDatePicker } from "@/components/shared/due-date-picker";
 import { LabelMultiSelect } from "@/components/shared/label-multi-select";
+import { CommentComposer } from "@/components/shared/comment-composer";
+import { CommentThread } from "@/components/shared/comment-thread";
+import {
+  useCreateComment,
+  useDeleteComment,
+  useReactToComment,
+  useUnreactToComment,
+} from "@/hooks/use-comment-mutations";
 import type { TaskStatus } from "@/components/shared/status-select";
 import type { Priority } from "@/components/shared/priority-badge";
 
@@ -216,18 +225,34 @@ function SubtaskList({
 
 function TaskDetailContent({ taskId }: { taskId: string }) {
   const workspace = useWorkspace();
+  const { user } = useUser();
   const closeDetail = useTaskStore((s) => s.closeDetail);
   const updateTask = useUpdateTask();
   const deleteTask = useDeleteTask();
+  const createComment = useCreateComment();
+  const deleteComment = useDeleteComment();
+  const reactComment = useReactToComment();
+  const unreactComment = useUnreactToComment();
 
   const { data: task, isLoading } = trpc.task.get.useQuery({
     workspaceId: workspace.id,
     taskId,
   });
+  const { data: commentsData } = trpc.comment.listByTask.useQuery(
+    {
+      workspaceId: workspace.id,
+      taskId,
+    },
+    { enabled: !!task },
+  );
+  const { data: workspaceMembers } = trpc.workspace.members.useQuery({
+    workspaceId: workspace.id,
+  });
 
   const titleRef = useRef<HTMLTextAreaElement>(null);
 
   const editor = useEditor({
+    immediatelyRender: false,
     extensions: [
       StarterKit,
       Placeholder.configure({ placeholder: "Add description…" }),
@@ -260,7 +285,21 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
     if (task.description && current !== task.description) {
       editor.commands.setContent(task.description);
     }
-  }, [task?.description, editor]);
+  }, [task, task?.description, editor]);
+
+  useEffect(() => {
+    function focusComment() {
+      if (!task) return;
+      const el = document.getElementById(`comment-composer-${task.id}`);
+      el?.focus();
+    }
+    document.addEventListener("todouss:focus-comment", focusComment as EventListener);
+    return () =>
+      document.removeEventListener(
+        "todouss:focus-comment",
+        focusComment as EventListener,
+      );
+  }, [task]);
 
   function saveTitle() {
     if (!task || !titleRef.current) return;
@@ -274,6 +313,9 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
     deleteTask.mutate({ workspaceId: workspace.id, taskId: task.id });
     closeDetail();
   }
+
+  const currentUserId =
+    workspaceMembers?.find((m) => m.user.clerkId === user?.id)?.userId ?? "";
 
   if (isLoading) {
     return (
@@ -383,6 +425,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
               <span className="w-20 shrink-0 text-xs text-muted-foreground">Assignee</span>
               <div className="flex items-center gap-2">
                 {task.assignee.avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={task.assignee.avatarUrl}
                     alt={task.assignee.name ?? ""}
@@ -440,6 +483,53 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
             priority: s.priority,
           }))}
         />
+
+        {/* Divider */}
+        <div className="border-t border-border" />
+
+        {/* Comments */}
+        <div className="space-y-3">
+          <p className="text-xs font-medium text-muted-foreground">Comments</p>
+          <CommentComposer
+            textareaId={`comment-composer-${task.id}`}
+            members={(workspaceMembers ?? []).map((m) => ({
+              id: m.userId,
+              name: m.user.name,
+              email: m.user.email,
+            }))}
+            isSubmitting={createComment.isPending}
+            onSubmit={(body) =>
+              createComment.mutate({
+                workspaceId: workspace.id,
+                taskId: task.id,
+                body,
+              })
+            }
+          />
+          <CommentThread
+            comments={(commentsData ?? []).map((c) => ({
+              id: c.id,
+              authorId: c.authorId,
+              body: c.body,
+              isEdited: c.isEdited,
+              editedAt: c.editedAt,
+              createdAt: c.createdAt,
+              author: c.author,
+              mentions: c.mentions,
+              reactions: c.reactions,
+            }))}
+            currentUserId={currentUserId}
+            onDelete={(commentId) =>
+              deleteComment.mutate({ workspaceId: workspace.id, commentId })
+            }
+            onReact={(commentId, emoji) =>
+              reactComment.mutate({ workspaceId: workspace.id, commentId, emoji })
+            }
+            onUnreact={(commentId, emoji) =>
+              unreactComment.mutate({ workspaceId: workspace.id, commentId, emoji })
+            }
+          />
+        </div>
       </div>
     </div>
   );
