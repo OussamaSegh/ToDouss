@@ -120,9 +120,9 @@ The web app ships a web app manifest and static icons under `apps/web/public/`. 
 
 ## Deploying to Vercel
 
-This repo pins **pnpm 10** (`packageManager` + `engines.pnpm` in the root `package.json`) and uses **lockfile v9**. Vercel’s default pnpm is older, so installs are driven by **Corepack** via `vercel.json`.
+This repo pins **pnpm 10** (`packageManager` + `engines.pnpm` in the root `package.json`) and uses **lockfile v9**. Vercel’s default pnpm is older, so `vercel.json` runs **`npx pnpm@10.33.2`** for install and scripts (avoids Corepack / PATH issues with the preinstalled `pnpm` binary).
 
-1. **Node.js 20+** — In the Vercel project: **Settings → General → Node.js Version** → `20.x` (or newer LTS you support).
+1. **Node.js 20+** — Required by the root `package.json` `engines.node`. The repo includes [`.nvmrc`](.nvmrc) so Vercel can pick **20.x** automatically; still verify **Settings → General → Node.js Version** (or leave it on the default that reads `.nvmrc`).
 2. **Root Directory** (choose one and keep it consistent with which `vercel.json` applies):
    - **Repository root** (`.`) — uses the root [`vercel.json`](vercel.json). Set the **Framework Preset** to Next.js only if Vercel correctly detects `apps/web`; you may need a custom **Build Command** such as `pnpm exec turbo run build --filter=@todouss/web` and the correct app root per [Vercel’s Turborepo guide](https://vercel.com/docs/monorepos/turborepo).
    - **`apps/web`** (recommended for a single Next app) — uses [`apps/web/vercel.json`](apps/web/vercel.json). Install runs from the monorepo root (`cd ../..`) so workspaces and the lockfile resolve correctly.
