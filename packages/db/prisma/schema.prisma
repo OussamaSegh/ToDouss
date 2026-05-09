@@ -2,6 +2,8 @@ generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["fullTextSearchPostgres"]
   output          = "../src/generated/client"
+  // Vercel / AWS Lambda use this runtime; `native` = your local machine at generate time.
+  binaryTargets   = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {

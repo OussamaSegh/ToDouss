@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useState } from "react";
 import { cn, ProjectIcon, UiButton, UiIcon } from "@todouss/ui";
 import { TaskList, GroupByDropdown, type GroupBy } from "@/components/tasks/task-list";
 import { BoardView } from "@/components/tasks/board-view";
@@ -57,23 +57,21 @@ export default function ProjectPage({ params }: ProjectPageProps) {
     },
   });
 
-  const selectedSavedView = useMemo(
-    () => (activeSavedView ? savedViews?.find((v) => v.id === activeSavedView) : undefined),
-    [activeSavedView, savedViews],
-  );
-
-  useEffect(() => {
-    if (!selectedSavedView) return;
-    setFilters(advancedFiltersFromSavedJson(selectedSavedView.filters));
-    const vt = selectedSavedView.viewType.toLowerCase();
+  function applySavedViewSelection(id: string) {
+    setActiveSavedView(id);
+    if (!id) return;
+    const v = savedViews?.find((x) => x.id === id);
+    if (!v) return;
+    setFilters(advancedFiltersFromSavedJson(v.filters));
+    const vt = v.viewType.toLowerCase();
     if (vt === "list" || vt === "board" || vt === "calendar" || vt === "timeline" || vt === "table") {
       setView(vt as ViewType);
     }
-    const gb = selectedSavedView.groupBy;
+    const gb = v.groupBy;
     if (gb === "none" || gb === "status" || gb === "priority") {
       setGroupBy(gb);
     }
-  }, [selectedSavedView]);
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -90,7 +88,7 @@ export default function ProjectPage({ params }: ProjectPageProps) {
               <>
                 <select
                   value={activeSavedView}
-                  onChange={(e) => setActiveSavedView(e.target.value)}
+                  onChange={(e) => applySavedViewSelection(e.target.value)}
                   className="rounded-md border border-border bg-background px-2 py-1 text-xs"
                 >
                   <option value="">Saved views</option>

@@ -122,7 +122,7 @@ pnpm --filter @todouss/web dev
 # Background workers (needs REDIS_URL)
 pnpm workers:dev
 
-# Unit tests (packages with a `test` script)
+# Unit + integration tests (Turbo runs every package that defines `pnpm test`)
 pnpm test
 
 # Run type checking across all packages
@@ -132,9 +132,20 @@ pnpm typecheck
 pnpm db:push
 ```
 
+### Automated tests
+
+- **Unit tests** — Vitest in `packages/billing`, `packages/validators`, `packages/trpc` (library helpers), and `apps/web` (`src/**/*.test.ts`). They do not require a database.
+- **`TEST_DATABASE_URL`** — When this is set to a **disposable Postgres** database (never production), integration suites run:
+  - `packages/trpc/src/trpc.integration.test.ts` — `createCaller` workspace isolation, plan limits (`project.create`, `invite.create`).
+  - `apps/web/src/lib/rest-auth.integration.test.ts` — API key authentication + task `where` scoping with an injected `PrismaClient`.
+  If it is unset, those files are skipped so `pnpm test` stays fast locally.
+- **CI** — `.github/workflows/ci.yml` starts Postgres, sets `TEST_DATABASE_URL`, runs `pnpm db:generate`, `prisma db push` on the test DB, then `pnpm test` and `pnpm typecheck`.
+- **Playwright** — Smoke tests live in `apps/web/e2e/`. Run `pnpm --filter @todouss/web test:e2e` with the same Clerk env vars as dev (`NEXT_PUBLIC_CLERK_*`, `CLERK_SECRET_KEY`). CI does not run Playwright by default; add a job or `@clerk/testing` when you have stable test credentials.
+
 ## Environment Variables
 Copy `.env.example` to `.env.local` and fill in:
 - `DATABASE_URL` + `DIRECT_URL` (Supabase)
+- Optional: `TEST_DATABASE_URL` for local integration tests (see Automated tests above)
 - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY`
 - `CLERK_WEBHOOK_SECRET` (from Clerk dashboard → Webhooks)
 - `REDIS_URL` — TCP Redis URL for `apps/workers` (e.g. `redis://localhost:6379`)

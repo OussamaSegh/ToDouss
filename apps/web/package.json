@@ -8,7 +8,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint src",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.12.12",
@@ -26,11 +28,11 @@
     "@tiptap/pm": "^3.22.5",
     "@tiptap/react": "^3.22.5",
     "@tiptap/starter-kit": "^3.22.5",
+    "@todouss/billing": "workspace:*",
     "@todouss/db": "workspace:*",
     "@todouss/trpc": "workspace:*",
     "@todouss/ui": "workspace:*",
     "@todouss/validators": "workspace:*",
-    "@todouss/billing": "workspace:*",
     "@trpc/client": "^11.1.0",
     "@trpc/react-query": "^11.1.0",
     "@trpc/server": "^11.1.0",
@@ -46,6 +48,7 @@
     "pusher-js": "^8.5.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "server-only": "^0.0.1",
     "stripe": "^17.5.0",
     "superjson": "^2.2.2",
     "svix": "^1.92.2",
@@ -54,6 +57,7 @@
     "zustand": "^5.0.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "@tailwindcss/postcss": "^4",
     "@todouss/tsconfig": "workspace:*",
     "@types/node": "^20",
@@ -62,6 +66,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   }
 }

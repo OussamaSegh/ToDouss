@@ -22,8 +22,6 @@ interface QuickAddProps {
   /** When opening from calendar, pre-fill due date / time */
   initialDueDate?: Date | null;
   initialDueTime?: boolean;
-  /** Change when opening a new slot so effect re-runs */
-  slotKey?: string;
   onClose: () => void;
   className?: string;
 }
@@ -34,12 +32,11 @@ export function QuickAdd({
   defaultStatus = "TODO",
   initialDueDate,
   initialDueTime = false,
-  slotKey,
   onClose,
   className,
 }: QuickAddProps) {
   const [title, setTitle] = useState("");
-  const [detectedDate, setDetectedDate] = useState<Date | null>(null);
+  const [detectedDate, setDetectedDate] = useState<Date | null>(() => initialDueDate ?? null);
   const [cleanTitle, setCleanTitle] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -48,13 +45,6 @@ export function QuickAdd({
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
-
-  useEffect(() => {
-    if (initialDueDate) {
-      setDetectedDate(initialDueDate);
-      setCleanTitle("");
-    }
-  }, [initialDueDate, slotKey]);
 
   function parseTitle(raw: string) {
     if (!chrono || !raw.trim()) {

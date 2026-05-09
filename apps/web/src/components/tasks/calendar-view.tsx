@@ -605,11 +605,11 @@ export function CalendarView({ projectId, advancedFilters }: CalendarViewProps) 
 
         {quickAddOpen && quickAddDay ? (
           <QuickAdd
+            key={quickAddSlotKey}
             workspaceId={workspace.id}
             projectId={projectId}
             initialDueDate={quickAddDay}
             initialDueTime={quickAddTimed}
-            slotKey={quickAddSlotKey}
             onClose={() => {
               setQuickAddOpen(false);
               setQuickAddDay(null);

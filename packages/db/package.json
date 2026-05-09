@@ -4,7 +4,8 @@
   "private": true,
   "exports": {
     ".": "./src/index.ts",
-    "./client": "./src/client.ts"
+    "./client": "./src/client.ts",
+    "./test-helpers": "./src/test-helpers.ts"
   },
   "scripts": {
     "db:generate": "prisma generate",

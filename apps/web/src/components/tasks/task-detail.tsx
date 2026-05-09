@@ -93,21 +93,6 @@ function TaskRecurrenceEditor({
     parsed.dayOfMonth ?? Math.min(28, new Date().getDate()),
   );
 
-  useEffect(() => {
-    const next =
-      parseRecurrenceRule(recurrenceRuleStr ?? "") ??
-      ({
-        frequency: "DAILY",
-        interval: 1,
-        timezone: defaultTimezone(),
-      } as RecurrenceRuleInput);
-    setFrequency(next.frequency);
-    setInterval(next.interval ?? 1);
-    setTimezone(next.timezone ?? "UTC");
-    setWeekdays(next.weekdays?.length ? next.weekdays : [new Date().getDay()]);
-    setDayOfMonth(next.dayOfMonth ?? Math.min(28, new Date().getDate()));
-  }, [recurrenceRuleStr, isRecurring]);
-
   function buildRulePayload(): RecurrenceRuleInput {
     const base: RecurrenceRuleInput = {
       frequency,
@@ -841,6 +826,7 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
           </div>
 
           <TaskRecurrenceEditor
+            key={`${task.id}-${task.isRecurring}-${task.recurrenceRule ?? ""}`}
             taskId={task.id}
             workspaceId={workspace.id}
             isRecurring={task.isRecurring}

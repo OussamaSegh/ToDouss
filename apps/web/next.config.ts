@@ -7,6 +7,8 @@ const nextConfig: NextConfig = {
     "@todouss/ui",
     "@todouss/validators",
   ],
+  // Prisma Query Engine (.node): keep Node resolution + avoid stripping binaries from the server bundle (Vercel).
+  serverExternalPackages: ["@prisma/client", "prisma"],
   images: {
     remotePatterns: [
       { hostname: "img.clerk.com" },

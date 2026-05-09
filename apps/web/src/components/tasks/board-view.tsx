@@ -213,10 +213,10 @@ function BoardColumn({
         </div>
         {showQuickAdd ? (
           <QuickAdd
+            key={`board-${status}`}
             workspaceId={workspaceId}
             projectId={projectId}
             defaultStatus={status}
-            slotKey={`board-${status}`}
             onClose={onCloseQuickAdd}
             className="mx-0 my-2"
           />
