@@ -6,15 +6,23 @@ import {
   reorderSectionSchema,
 } from "@todouss/validators";
 import { createTRPCRouter, workspaceProcedure } from "../trpc";
+import { assertProjectIdAccessible } from "../lib/task-project-scope";
 
 async function assertProjectInWorkspace(
-  ctx: { db: import("@todouss/db").PrismaClient; workspaceId: string },
+  ctx: { db: import("@todouss/db").PrismaClient; workspaceId: string; member: { userId: string; role: import("@todouss/db").WorkspaceRole } },
   projectId: string,
 ) {
-  const project = await ctx.db.project.findUnique({ where: { id: projectId } });
-  if (!project || project.workspaceId !== ctx.workspaceId) {
-    throw new TRPCError({ code: "NOT_FOUND", message: "Project not found in workspace" });
-  }
+  const project = await ctx.db.project.findFirst({
+    where: { id: projectId, workspaceId: ctx.workspaceId },
+  });
+  if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "Project not found in workspace" });
+  await assertProjectIdAccessible(
+    ctx.db,
+    ctx.workspaceId,
+    ctx.member.userId,
+    ctx.member.role,
+    projectId,
+  );
   return project;
 }
 

@@ -1,0 +1,22 @@
+{
+  "name": "@todouss/workers",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@todouss/db": "workspace:*",
+    "@todouss/trpc": "workspace:*",
+    "bullmq": "^5.44.1",
+    "ioredis": "^5.6.1"
+  },
+  "devDependencies": {
+    "@todouss/tsconfig": "workspace:*",
+    "@types/node": "^20.19.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5"
+  }
+}

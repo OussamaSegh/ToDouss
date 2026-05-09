@@ -15,7 +15,8 @@ export default function AcceptInvitePage() {
     acceptInvite.mutate(
       { token },
       {
-        onSuccess: (data) => {
+        onSuccess: async (data) => {
+          await fetch("/api/auth/set-onboarded", { method: "POST", credentials: "include" });
           router.replace(`/${data.workspaceSlug}/inbox`);
         },
       },

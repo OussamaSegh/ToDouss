@@ -12,6 +12,7 @@ import { createTRPCRouter, workspaceProcedure } from "../trpc";
 import { ensureDbUser } from "../lib/ensure-db-user";
 import { parseMentionUserIdsFromBody } from "../lib/mentions";
 import { publishTaskEvent, publishWorkspaceEvent } from "../lib/realtime";
+import { assertTaskProjectAccess } from "../lib/task-project-scope";
 
 function canModerate(role: "OWNER" | "ADMIN" | "MEMBER" | "VIEWER") {
   return role === "OWNER" || role === "ADMIN";
@@ -23,9 +24,16 @@ export const commentRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const task = await ctx.db.task.findUnique({
         where: { id: input.taskId, workspaceId: ctx.workspaceId },
-        select: { id: true },
+        select: { id: true, projectId: true },
       });
       if (!task) throw new TRPCError({ code: "NOT_FOUND" });
+      await assertTaskProjectAccess(
+        ctx.db,
+        ctx.workspaceId,
+        ctx.member.userId,
+        ctx.member.role,
+        task.projectId,
+      );
 
       return ctx.db.comment.findMany({
         where: { taskId: input.taskId },
@@ -49,6 +57,13 @@ export const commentRouter = createTRPCRouter({
         select: { id: true, title: true, projectId: true },
       });
       if (!task) throw new TRPCError({ code: "NOT_FOUND" });
+      await assertTaskProjectAccess(
+        ctx.db,
+        ctx.workspaceId,
+        ctx.member.userId,
+        ctx.member.role,
+        task.projectId,
+      );
 
       const rawMentionIds = parseMentionUserIdsFromBody(input.body).filter(
         (id) => id !== dbUser.id,
@@ -145,11 +160,18 @@ export const commentRouter = createTRPCRouter({
 
       const comment = await ctx.db.comment.findUnique({
         where: { id: input.commentId },
-        include: { task: { select: { id: true, workspaceId: true, title: true } } },
+        include: { task: { select: { id: true, workspaceId: true, title: true, projectId: true } } },
       });
       if (!comment || comment.task.workspaceId !== ctx.workspaceId) {
         throw new TRPCError({ code: "NOT_FOUND" });
       }
+      await assertTaskProjectAccess(
+        ctx.db,
+        ctx.workspaceId,
+        ctx.member.userId,
+        ctx.member.role,
+        comment.task.projectId,
+      );
       if (comment.authorId !== dbUser.id && !canModerate(ctx.member.role)) {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
@@ -232,11 +254,18 @@ export const commentRouter = createTRPCRouter({
       const dbUser = await ensureDbUser(ctx);
       const comment = await ctx.db.comment.findUnique({
         where: { id: input.commentId },
-        include: { task: { select: { workspaceId: true } } },
+        include: { task: { select: { workspaceId: true, projectId: true } } },
       });
       if (!comment || comment.task.workspaceId !== ctx.workspaceId) {
         throw new TRPCError({ code: "NOT_FOUND" });
       }
+      await assertTaskProjectAccess(
+        ctx.db,
+        ctx.workspaceId,
+        ctx.member.userId,
+        ctx.member.role,
+        comment.task.projectId,
+      );
       if (comment.authorId !== dbUser.id && !canModerate(ctx.member.role)) {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
@@ -260,11 +289,18 @@ export const commentRouter = createTRPCRouter({
       const dbUser = await ensureDbUser(ctx);
       const comment = await ctx.db.comment.findUnique({
         where: { id: input.commentId },
-        include: { task: { select: { workspaceId: true, id: true } } },
+        include: { task: { select: { workspaceId: true, id: true, projectId: true } } },
       });
       if (!comment || comment.task.workspaceId !== ctx.workspaceId) {
         throw new TRPCError({ code: "NOT_FOUND" });
       }
+      await assertTaskProjectAccess(
+        ctx.db,
+        ctx.workspaceId,
+        ctx.member.userId,
+        ctx.member.role,
+        comment.task.projectId,
+      );
 
       const reaction = await ctx.db.commentReaction.upsert({
         where: {
@@ -291,11 +327,18 @@ export const commentRouter = createTRPCRouter({
       const dbUser = await ensureDbUser(ctx);
       const comment = await ctx.db.comment.findUnique({
         where: { id: input.commentId },
-        include: { task: { select: { workspaceId: true } } },
+        include: { task: { select: { workspaceId: true, projectId: true } } },
       });
       if (!comment || comment.task.workspaceId !== ctx.workspaceId) {
         throw new TRPCError({ code: "NOT_FOUND" });
       }
+      await assertTaskProjectAccess(
+        ctx.db,
+        ctx.workspaceId,
+        ctx.member.userId,
+        ctx.member.role,
+        comment.task.projectId,
+      );
 
       await ctx.db.commentReaction.deleteMany({
         where: {

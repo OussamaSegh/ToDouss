@@ -12,6 +12,12 @@ import { createTRPCRouter, workspaceProcedure } from "../trpc";
 import { ensureDbUser } from "../lib/ensure-db-user";
 import { parseMentionUserIdsFromBody } from "../lib/mentions";
 import {
+  assertProjectIdAccessible,
+  assertTaskProjectAccess,
+  mergeTaskProjectScope,
+} from "../lib/task-project-scope";
+import { dispatchWorkspaceWebhooks } from "../lib/dispatch-workspace-webhook";
+import {
   buildRecurrenceTaskPayload,
   createNextRecurringInstance,
   parseRecurrenceRule,
@@ -62,7 +68,14 @@ export const taskRouter = createTRPCRouter({
       workspaceId: ctx.workspaceId,
       isArchived: input.isArchived,
     };
-    if (input.projectId) where.projectId = input.projectId;
+    await mergeTaskProjectScope(
+      ctx.db,
+      ctx.workspaceId,
+      ctx.member.userId,
+      ctx.member.role,
+      input.projectId,
+      where,
+    );
     if (input.priority?.length) where.priority = { in: input.priority };
     if (input.assigneeId?.length) where.assigneeId = { in: input.assigneeId };
     if (input.labelIds?.length) where.labels = { some: { labelId: { in: input.labelIds } } };
@@ -168,11 +181,25 @@ export const taskRouter = createTRPCRouter({
       });
 
       if (!task) throw new TRPCError({ code: "NOT_FOUND" });
+      await assertTaskProjectAccess(
+        ctx.db,
+        ctx.workspaceId,
+        ctx.member.userId,
+        ctx.member.role,
+        task.projectId,
+      );
       return task;
     }),
 
   create: workspaceProcedure.input(createTaskSchema).mutation(async ({ ctx, input }) => {
     const dbUser = await ensureDbUser(ctx);
+    await assertProjectIdAccessible(
+      ctx.db,
+      ctx.workspaceId,
+      ctx.member.userId,
+      ctx.member.role,
+      input.projectId,
+    );
 
     const maxOrder = await ctx.db.task.findFirst({
       where: { workspaceId: ctx.workspaceId, projectId: input.projectId ?? null },
@@ -269,6 +296,23 @@ export const taskRouter = createTRPCRouter({
       });
       if (!existing) throw new TRPCError({ code: "NOT_FOUND" });
 
+      await assertTaskProjectAccess(
+        ctx.db,
+        ctx.workspaceId,
+        ctx.member.userId,
+        ctx.member.role,
+        existing.projectId,
+      );
+      if (input.projectId !== undefined) {
+        await assertProjectIdAccessible(
+          ctx.db,
+          ctx.workspaceId,
+          ctx.member.userId,
+          ctx.member.role,
+          input.projectId,
+        );
+      }
+
       const { id, workspaceId: _wid, labelIds, recurrenceRule, ...data } = input;
 
       const mentionIds = data.description
@@ -357,12 +401,41 @@ export const taskRouter = createTRPCRouter({
         });
       }
 
+      if (data.status === "DONE" && existing.status !== "DONE") {
+        await dispatchWorkspaceWebhooks(ctx.db, ctx.workspaceId, "task.completed", {
+          taskId: id,
+          title: task.title,
+          projectId: task.projectId,
+        });
+      }
+
       return task;
     },
   ),
 
   reorder: workspaceProcedure.input(reorderTaskSchema.extend({ workspaceId: z.string().cuid() })).mutation(
     async ({ ctx, input }) => {
+      const t = await ctx.db.task.findUnique({
+        where: { id: input.taskId, workspaceId: ctx.workspaceId },
+        select: { projectId: true },
+      });
+      if (!t) throw new TRPCError({ code: "NOT_FOUND" });
+      await assertTaskProjectAccess(
+        ctx.db,
+        ctx.workspaceId,
+        ctx.member.userId,
+        ctx.member.role,
+        t.projectId,
+      );
+      if (input.newProjectId !== undefined) {
+        await assertProjectIdAccessible(
+          ctx.db,
+          ctx.workspaceId,
+          ctx.member.userId,
+          ctx.member.role,
+          input.newProjectId,
+        );
+      }
       return ctx.db.task.update({
         where: { id: input.taskId, workspaceId: ctx.workspaceId },
         data: {
@@ -378,28 +451,50 @@ export const taskRouter = createTRPCRouter({
 
   delete: workspaceProcedure
     .input(z.object({ workspaceId: z.string().cuid(), taskId: z.string().cuid() }))
-    .mutation(({ ctx, input }) =>
-      ctx.db.task.delete({ where: { id: input.taskId, workspaceId: ctx.workspaceId } }),
-    ),
+    .mutation(async ({ ctx, input }) => {
+      const t = await ctx.db.task.findUnique({
+        where: { id: input.taskId, workspaceId: ctx.workspaceId },
+        select: { projectId: true },
+      });
+      if (!t) throw new TRPCError({ code: "NOT_FOUND" });
+      await assertTaskProjectAccess(
+        ctx.db,
+        ctx.workspaceId,
+        ctx.member.userId,
+        ctx.member.role,
+        t.projectId,
+      );
+      return ctx.db.task.delete({ where: { id: input.taskId, workspaceId: ctx.workspaceId } });
+    }),
 
   today: workspaceProcedure
     .input(z.object({ workspaceId: z.string().cuid() }))
-    .query(({ ctx }) => {
+    .query(async ({ ctx }) => {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
 
+      const where: Prisma.TaskWhereInput = {
+        workspaceId: ctx.workspaceId,
+        isArchived: false,
+        status: { notIn: ["DONE", "CANCELLED"] },
+        OR: [
+          { dueDate: { gte: today, lt: tomorrow } },
+          { dueDate: { lt: today } },
+        ],
+      };
+      await mergeTaskProjectScope(
+        ctx.db,
+        ctx.workspaceId,
+        ctx.member.userId,
+        ctx.member.role,
+        undefined,
+        where,
+      );
+
       return ctx.db.task.findMany({
-        where: {
-          workspaceId: ctx.workspaceId,
-          isArchived: false,
-          status: { notIn: ["DONE", "CANCELLED"] },
-          OR: [
-            { dueDate: { gte: today, lt: tomorrow } },
-            { dueDate: { lt: today } },
-          ],
-        },
+        where,
         include: {
           labels: { include: { label: true } },
           assignee: { select: { id: true, name: true, avatarUrl: true } },
@@ -410,19 +505,29 @@ export const taskRouter = createTRPCRouter({
 
   upcoming: workspaceProcedure
     .input(z.object({ workspaceId: z.string().cuid(), days: z.number().default(7) }))
-    .query(({ ctx, input }) => {
+    .query(async ({ ctx, input }) => {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const future = new Date(today);
       future.setDate(future.getDate() + input.days);
 
+      const where: Prisma.TaskWhereInput = {
+        workspaceId: ctx.workspaceId,
+        isArchived: false,
+        status: { notIn: ["DONE", "CANCELLED"] },
+        dueDate: { gte: today, lte: future },
+      };
+      await mergeTaskProjectScope(
+        ctx.db,
+        ctx.workspaceId,
+        ctx.member.userId,
+        ctx.member.role,
+        undefined,
+        where,
+      );
+
       return ctx.db.task.findMany({
-        where: {
-          workspaceId: ctx.workspaceId,
-          isArchived: false,
-          status: { notIn: ["DONE", "CANCELLED"] },
-          dueDate: { gte: today, lte: future },
-        },
+        where,
         include: {
           labels: { include: { label: true } },
           assignee: { select: { id: true, name: true, avatarUrl: true } },
@@ -431,62 +536,105 @@ export const taskRouter = createTRPCRouter({
       });
     }),
 
-  calendarRange: workspaceProcedure.input(taskRangeSchema).query(({ ctx, input }) =>
-    ctx.db.task.findMany({
-      where: {
-        workspaceId: ctx.workspaceId,
-        ...(input.projectId ? { projectId: input.projectId } : {}),
-        ...(input.includeArchived ? {} : { isArchived: false }),
-        ...(input.includeCompleted ? {} : { status: { notIn: ["DONE", "CANCELLED"] } }),
-        dueDate: { gte: input.from, lte: input.to },
-        ...(input.labelIds?.length ? { labels: { some: { labelId: { in: input.labelIds } } } } : {}),
-        ...(input.assigneeId?.length ? { assigneeId: { in: input.assigneeId } } : {}),
-      },
+  calendarRange: workspaceProcedure.input(taskRangeSchema).query(async ({ ctx, input }) => {
+    const rangeOverlap: Prisma.TaskWhereInput = {
+      OR: [
+        { startDate: { gte: input.from, lte: input.to } },
+        { dueDate: { gte: input.from, lte: input.to } },
+        {
+          AND: [
+            { startDate: { lte: input.from } },
+            { dueDate: { gte: input.to } },
+          ],
+        },
+      ],
+    };
+
+    const where: Prisma.TaskWhereInput = {
+      workspaceId: ctx.workspaceId,
+      parentTaskId: null,
+      ...(input.includeArchived ? {} : { isArchived: false }),
+      ...(input.includeCompleted ? {} : { status: { notIn: ["DONE", "CANCELLED"] } }),
+      AND: [rangeOverlap],
+      ...(input.labelIds?.length ? { labels: { some: { labelId: { in: input.labelIds } } } } : {}),
+      ...(input.assigneeId?.length ? { assigneeId: { in: input.assigneeId } } : {}),
+      ...(input.status?.length ? { status: { in: input.status } } : {}),
+      ...(input.priority?.length ? { priority: { in: input.priority } } : {}),
+    };
+    await mergeTaskProjectScope(
+      ctx.db,
+      ctx.workspaceId,
+      ctx.member.userId,
+      ctx.member.role,
+      input.projectId,
+      where,
+    );
+    return ctx.db.task.findMany({
+      where,
       include: {
         labels: { include: { label: true } },
         assignee: { select: { id: true, name: true, avatarUrl: true } },
+        project: { select: { id: true, name: true, color: true } },
         _count: { select: { comments: true, subtasks: true, attachments: true } },
       },
-      orderBy: [{ dueDate: "asc" }, { sortOrder: "asc" }],
-    }),
-  ),
+      orderBy: [{ startDate: "asc" }, { dueDate: "asc" }, { sortOrder: "asc" }],
+    });
+  }),
 
-  timelineRange: workspaceProcedure.input(taskRangeSchema).query(({ ctx, input }) =>
-    ctx.db.task.findMany({
-      where: {
-        workspaceId: ctx.workspaceId,
-        ...(input.projectId ? { projectId: input.projectId } : {}),
-        ...(input.includeArchived ? {} : { isArchived: false }),
-        ...(input.includeCompleted ? {} : { status: { notIn: ["DONE", "CANCELLED"] } }),
-        OR: [
-          { startDate: { gte: input.from, lte: input.to } },
-          { dueDate: { gte: input.from, lte: input.to } },
-          {
-            AND: [
-              { startDate: { lte: input.from } },
-              { dueDate: { gte: input.to } },
-            ],
-          },
-        ],
-        ...(input.labelIds?.length ? { labels: { some: { labelId: { in: input.labelIds } } } } : {}),
-        ...(input.assigneeId?.length ? { assigneeId: { in: input.assigneeId } } : {}),
-      },
+  timelineRange: workspaceProcedure.input(taskRangeSchema).query(async ({ ctx, input }) => {
+    const where: Prisma.TaskWhereInput = {
+      workspaceId: ctx.workspaceId,
+      ...(input.includeArchived ? {} : { isArchived: false }),
+      ...(input.includeCompleted ? {} : { status: { notIn: ["DONE", "CANCELLED"] } }),
+      OR: [
+        { startDate: { gte: input.from, lte: input.to } },
+        { dueDate: { gte: input.from, lte: input.to } },
+        {
+          AND: [
+            { startDate: { lte: input.from } },
+            { dueDate: { gte: input.to } },
+          ],
+        },
+      ],
+      ...(input.labelIds?.length ? { labels: { some: { labelId: { in: input.labelIds } } } } : {}),
+      ...(input.assigneeId?.length ? { assigneeId: { in: input.assigneeId } } : {}),
+      ...(input.status?.length ? { status: { in: input.status } } : {}),
+      ...(input.priority?.length ? { priority: { in: input.priority } } : {}),
+    };
+    await mergeTaskProjectScope(
+      ctx.db,
+      ctx.workspaceId,
+      ctx.member.userId,
+      ctx.member.role,
+      input.projectId,
+      where,
+    );
+    return ctx.db.task.findMany({
+      where,
       include: {
         labels: { include: { label: true } },
         assignee: { select: { id: true, name: true, avatarUrl: true } },
         _count: { select: { comments: true, subtasks: true, attachments: true } },
       },
       orderBy: [{ startDate: "asc" }, { dueDate: "asc" }, { sortOrder: "asc" }],
-    }),
-  ),
+    });
+  }),
 
   tableList: workspaceProcedure.input(taskFilterSchema).query(async ({ ctx, input }) => {
+    const where: Prisma.TaskWhereInput = {
+      workspaceId: ctx.workspaceId,
+      isArchived: input.isArchived,
+    };
+    await mergeTaskProjectScope(
+      ctx.db,
+      ctx.workspaceId,
+      ctx.member.userId,
+      ctx.member.role,
+      input.projectId,
+      where,
+    );
     const base = await ctx.db.task.findMany({
-      where: {
-        workspaceId: ctx.workspaceId,
-        ...(input.projectId ? { projectId: input.projectId } : {}),
-        isArchived: input.isArchived,
-      },
+      where,
       include: {
         labels: { include: { label: true } },
         assignee: { select: { id: true, name: true, avatarUrl: true } },
@@ -505,6 +653,13 @@ export const taskRouter = createTRPCRouter({
         where: { id: input.taskId, workspaceId: ctx.workspaceId },
       });
       if (!source) throw new TRPCError({ code: "NOT_FOUND" });
+      await assertTaskProjectAccess(
+        ctx.db,
+        ctx.workspaceId,
+        ctx.member.userId,
+        ctx.member.role,
+        source.projectId,
+      );
       if (!source.isRecurring || !source.recurrenceRule) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Task is not recurring" });
       }

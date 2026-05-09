@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState, useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore, useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import { trpc } from "@/lib/trpc/provider";
 
@@ -10,6 +10,25 @@ type Step = 1 | 2;
 
 export default function OnboardingPage() {
   const { user } = useUser();
+  const { data: workspaces, isPending: workspacesLoading } = trpc.workspace.list.useQuery();
+  const [existingWorkspaceRedirectFailed, setExistingWorkspaceRedirectFailed] = useState(false);
+
+  /** Already in at least one workspace — refresh session cookie and skip create flow. */
+  useEffect(() => {
+    if (workspacesLoading || !workspaces?.length || existingWorkspaceRedirectFailed) return;
+    void (async () => {
+      const res = await fetch("/api/auth/set-onboarded", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (res.ok) {
+        window.location.replace(`/${workspaces[0]!.slug}/inbox`);
+      } else {
+        setExistingWorkspaceRedirectFailed(true);
+      }
+    })();
+  }, [workspaces, workspacesLoading, existingWorkspaceRedirectFailed]);
+
   const [step, setStep] = useState<Step>(1);
   const urlHost = useSyncExternalStore(
     () => () => {},
@@ -65,6 +84,14 @@ export default function OnboardingPage() {
   }
 
   const isLoading = createWorkspace.isPending || completeOnboarding.isPending;
+
+  if (workspacesLoading || (workspaces && workspaces.length > 0 && !existingWorkspaceRedirectFailed)) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4 text-sm text-muted-foreground">
+        Signing you in…
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">

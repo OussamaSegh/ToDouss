@@ -23,6 +23,12 @@ export default function LandingPage() {
             Start for free
           </Link>
           <Link
+            href="/pricing"
+            className="rounded-lg border border-border px-6 py-3 text-base font-medium hover:bg-muted transition-colors"
+          >
+            Pricing
+          </Link>
+          <Link
             href="/sign-in"
             className="rounded-lg border border-border px-6 py-3 text-base font-medium hover:bg-muted transition-colors"
           >
@@ -30,17 +36,21 @@ export default function LandingPage() {
           </Link>
         </div>
         <p className="text-sm text-muted-foreground max-w-md">
-          ToDouss is free to use — all features, no trials, no credit card.
+          Free tier for getting started — upgrade anytime for unlimited projects, larger teams, and more storage.
         </p>
       </section>
 
       {/* Always free */}
       <section id="always-free" className="border-t border-border py-16 px-6 bg-muted/30">
         <div className="max-w-3xl mx-auto text-center space-y-3">
-          <h2 className="text-2xl font-bold">Built to stay free</h2>
+          <h2 className="text-2xl font-bold">Built for focus</h2>
           <p className="text-muted-foreground leading-relaxed">
-            No surprise paywalls — we&apos;re focused on a great todo experience for everyone. Create workspaces, invite your team,
-            and use every view without a subscription.
+            The free plan covers individuals and small pairs. When you are ready, Pro and Business unlock unlimited scale
+            with clear usage limits. See{" "}
+            <Link href="/pricing" className="text-primary hover:underline">
+              pricing
+            </Link>{" "}
+            for details.
           </p>
         </div>
       </section>

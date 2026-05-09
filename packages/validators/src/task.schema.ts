@@ -101,6 +101,8 @@ export const taskRangeSchema = z.object({
   includeCompleted: z.boolean().default(true),
   labelIds: z.array(z.string().cuid()).optional(),
   assigneeId: z.array(z.string().cuid()).optional(),
+  status: z.array(taskStatusEnum).optional(),
+  priority: z.array(priorityEnum).optional(),
 });
 
 export type CreateTaskInput = z.infer<typeof createTaskSchema>;

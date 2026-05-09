@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
-import { db } from "@todouss/db";
+import { db, buildVisibleProjectWhere } from "@todouss/db";
 import { AppShell } from "@/components/layout/app-shell";
 import type { WorkspaceData } from "@/types/workspace";
 
@@ -52,8 +52,16 @@ export default async function WorkspaceLayout({
 
   const currentMembership = workspaces.find((w) => w.id === workspace.id);
 
+  const membershipRow = workspace.members[0];
+  const projectWhere = await buildVisibleProjectWhere(
+    db,
+    workspace.id,
+    dbUser.id,
+    membershipRow?.role ?? "MEMBER",
+  );
+
   const projects = await db.project.findMany({
-    where: { workspaceId: workspace.id },
+    where: projectWhere,
     orderBy: { sortOrder: "asc" },
   });
 

@@ -4,14 +4,19 @@
   "private": true,
   "exports": {
     ".": "./src/index.ts",
-    "./server": "./src/server.ts"
+    "./server": "./src/server.ts",
+    "./recurrence": "./src/lib/recurrence.ts",
+    "./task-scope": "./src/lib/task-project-scope.ts",
+    "./crypto-keys": "./src/lib/crypto-keys.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.12.12",
+    "@todouss/billing": "workspace:*",
     "@todouss/db": "workspace:*",
+    "@todouss/storage": "workspace:*",
     "@todouss/validators": "workspace:*",
     "@trpc/server": "^11.1.0",
     "pusher": "^5.3.3",

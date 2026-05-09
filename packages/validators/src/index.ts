@@ -7,3 +7,6 @@ export * from "./comment.schema";
 export * from "./invite.schema";
 export * from "./notification.schema";
 export * from "./saved-view.schema";
+export * from "./attachment.schema";
+export * from "./team.schema";
+export * from "./api-key.schema";

@@ -1,23 +1,33 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { buildVisibleProjectWhere } from "@todouss/db";
 import { createProjectSchema, updateProjectSchema } from "@todouss/validators";
 import { createTRPCRouter, workspaceProcedure } from "../trpc";
+import { assertCanCreateProject } from "../lib/plan-limits";
 
 export const projectRouter = createTRPCRouter({
   list: workspaceProcedure
     .input(z.object({ workspaceId: z.string().cuid() }))
-    .query(({ ctx }) =>
-      ctx.db.project.findMany({
-        where: { workspaceId: ctx.workspaceId },
+    .query(async ({ ctx }) => {
+      const where = await buildVisibleProjectWhere(
+        ctx.db,
+        ctx.workspaceId,
+        ctx.member.userId,
+        ctx.member.role,
+      );
+      return ctx.db.project.findMany({
+        where,
         orderBy: { sortOrder: "asc" },
-      }),
-    ),
+      });
+    }),
 
   create: workspaceProcedure
     .input(createProjectSchema)
     .mutation(async ({ ctx, input }) => {
       const dbUser = await ctx.db.user.findUnique({ where: { clerkId: ctx.userId } });
       if (!dbUser) throw new TRPCError({ code: "NOT_FOUND" });
+
+      await assertCanCreateProject(ctx.db, ctx.workspaceId, ctx.workspace.plan);
 
       const maxOrder = await ctx.db.project.findFirst({
         where: { workspaceId: ctx.workspaceId },

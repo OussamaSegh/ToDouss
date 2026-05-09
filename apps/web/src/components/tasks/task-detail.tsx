@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { cn } from "@todouss/ui";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, Trash2, Loader2, Plus } from "lucide-react";
+import { X, Trash2, Loader2, Plus, Paperclip, Link2 } from "lucide-react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import { StarterKit } from "@tiptap/starter-kit";
 import { Placeholder } from "@tiptap/extension-placeholder";
@@ -32,8 +32,238 @@ import {
 } from "@/hooks/use-comment-mutations";
 import type { TaskStatus } from "@/components/shared/status-select";
 import type { Priority } from "@/components/shared/priority-badge";
+import {
+  parseRecurrenceRule,
+} from "@todouss/trpc/recurrence";
+import type { z } from "zod";
+import { recurrenceRuleSchema } from "@todouss/validators";
 
 const PRIORITY_OPTIONS: Priority[] = ["P1", "P2", "P3", "P4"];
+
+type RecurrenceRuleInput = z.infer<typeof recurrenceRuleSchema>;
+
+const RECURRENCE_FREQUENCIES = ["DAILY", "WEEKLY", "MONTHLY", "YEARLY"] as const;
+
+const FREQUENCY_LABEL: Record<(typeof RECURRENCE_FREQUENCIES)[number], string> = {
+  DAILY: "Day(s)",
+  WEEKLY: "Week(s)",
+  MONTHLY: "Month(s)",
+  YEARLY: "Year(s)",
+};
+
+const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+
+function defaultTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
+function TaskRecurrenceEditor({
+  taskId,
+  workspaceId,
+  isRecurring,
+  recurrenceRuleStr,
+}: {
+  taskId: string;
+  workspaceId: string;
+  isRecurring: boolean;
+  recurrenceRuleStr: string | null;
+}) {
+  const updateTask = useUpdateTask();
+  const parsed =
+    parseRecurrenceRule(recurrenceRuleStr ?? "") ??
+    ({
+      frequency: "DAILY",
+      interval: 1,
+      timezone: defaultTimezone(),
+    } as RecurrenceRuleInput);
+
+  const [frequency, setFrequency] = useState<RecurrenceRuleInput["frequency"]>(
+    parsed.frequency,
+  );
+  const [interval, setInterval] = useState(parsed.interval ?? 1);
+  const [timezone, setTimezone] = useState(parsed.timezone ?? "UTC");
+  const [weekdays, setWeekdays] = useState<number[]>(
+    parsed.weekdays?.length ? parsed.weekdays : [new Date().getDay()],
+  );
+  const [dayOfMonth, setDayOfMonth] = useState(
+    parsed.dayOfMonth ?? Math.min(28, new Date().getDate()),
+  );
+
+  useEffect(() => {
+    const next =
+      parseRecurrenceRule(recurrenceRuleStr ?? "") ??
+      ({
+        frequency: "DAILY",
+        interval: 1,
+        timezone: defaultTimezone(),
+      } as RecurrenceRuleInput);
+    setFrequency(next.frequency);
+    setInterval(next.interval ?? 1);
+    setTimezone(next.timezone ?? "UTC");
+    setWeekdays(next.weekdays?.length ? next.weekdays : [new Date().getDay()]);
+    setDayOfMonth(next.dayOfMonth ?? Math.min(28, new Date().getDate()));
+  }, [recurrenceRuleStr, isRecurring]);
+
+  function buildRulePayload(): RecurrenceRuleInput {
+    const base: RecurrenceRuleInput = {
+      frequency,
+      interval: Math.min(365, Math.max(1, interval)),
+      timezone: timezone.trim() || "UTC",
+    };
+    if (frequency === "WEEKLY") {
+      base.weekdays = weekdays.length ? [...new Set(weekdays)].sort((a, b) => a - b) : [0];
+    }
+    if (frequency === "MONTHLY" || frequency === "YEARLY") {
+      base.dayOfMonth = Math.min(31, Math.max(1, dayOfMonth));
+    }
+    return base;
+  }
+
+  function enableRecurrence() {
+    const tz = defaultTimezone();
+    updateTask.mutate({
+      id: taskId,
+      workspaceId,
+      isRecurring: true,
+      recurrenceRule: {
+        frequency: "DAILY",
+        interval: 1,
+        timezone: tz,
+      },
+    });
+  }
+
+  function disableRecurrence() {
+    updateTask.mutate({
+      id: taskId,
+      workspaceId,
+      isRecurring: false,
+      recurrenceRule: null,
+    });
+  }
+
+  function saveRecurrence() {
+    updateTask.mutate({
+      id: taskId,
+      workspaceId,
+      isRecurring: true,
+      recurrenceRule: buildRulePayload(),
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-3">
+        <span className="w-20 shrink-0 text-xs text-muted-foreground">Repeat</span>
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            checked={isRecurring}
+            onChange={(e) => {
+              if (e.target.checked) enableRecurrence();
+              else disableRecurrence();
+            }}
+            className="rounded border-border"
+          />
+          Recurring task
+        </label>
+      </div>
+
+      {isRecurring ? (
+        <div className="ml-0 sm:ml-[5.5rem] space-y-2 rounded-md border border-border/60 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">Every</span>
+            <input
+              type="number"
+              min={1}
+              max={365}
+              value={interval}
+              onChange={(e) => setInterval(Number.parseInt(e.target.value, 10) || 1)}
+              className="w-16 rounded border border-border bg-background px-2 py-1 text-xs"
+            />
+            <select
+              value={frequency}
+              onChange={(e) =>
+                setFrequency(e.target.value as RecurrenceRuleInput["frequency"])
+              }
+              className="rounded border border-border bg-background px-2 py-1 text-xs"
+            >
+              {RECURRENCE_FREQUENCIES.map((f) => (
+                <option key={f} value={f}>
+                  {FREQUENCY_LABEL[f]}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {frequency === "WEEKLY" ? (
+            <div className="flex flex-wrap gap-1.5">
+              {WEEKDAY_LABELS.map((label, d) => {
+                const on = weekdays.includes(d);
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() =>
+                      setWeekdays((prev) =>
+                        on ? prev.filter((x) => x !== d) : [...prev, d].sort((a, b) => a - b),
+                      )
+                    }
+                    className={cn(
+                      "rounded px-2 py-0.5 text-xs border transition-colors",
+                      on
+                        ? "border-primary bg-primary/10 text-foreground"
+                        : "border-border text-muted-foreground hover:bg-muted/50",
+                    )}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {frequency === "MONTHLY" || frequency === "YEARLY" ? (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-muted-foreground">Day of month</span>
+              <input
+                type="number"
+                min={1}
+                max={31}
+                value={dayOfMonth}
+                onChange={(e) => setDayOfMonth(Number.parseInt(e.target.value, 10) || 1)}
+                className="w-14 rounded border border-border bg-background px-2 py-1 text-xs"
+              />
+            </div>
+          ) : null}
+
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-muted-foreground shrink-0">Timezone</span>
+            <input
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              placeholder="UTC"
+              className="flex-1 min-w-0 rounded border border-border bg-background px-2 py-1 text-xs"
+            />
+          </div>
+
+          <button
+            type="button"
+            disabled={updateTask.isPending}
+            onClick={() => saveRecurrence()}
+            className="text-xs rounded-md border border-border px-2 py-1 hover:bg-muted/60 disabled:opacity-50"
+          >
+            Save recurrence
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function PrioritySelect({
   value,
@@ -218,6 +448,150 @@ function SubtaskList({
           <Plus className="h-3.5 w-3.5" />
           Add subtask
         </button>
+      )}
+    </div>
+  );
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
+function TaskAttachments({
+  taskId,
+  attachments,
+}: {
+  taskId: string;
+  attachments: Array<{
+    id: string;
+    name: string;
+    url: string;
+    size: number;
+    mimeType: string;
+  }>;
+}) {
+  const workspace = useWorkspace();
+  const utils = trpc.useUtils();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const prepare = trpc.attachment.prepareUpload.useMutation();
+  const complete = trpc.attachment.completeUpload.useMutation();
+  const remove = trpc.attachment.remove.useMutation();
+  const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setError(null);
+    setUploading(true);
+    try {
+      const prep = await prepare.mutateAsync({
+        workspaceId: workspace.id,
+        taskId,
+        fileName: file.name,
+        mimeType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+      });
+      const put = await fetch(prep.uploadUrl, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+      });
+      if (!put.ok) {
+        setError("Upload failed. Check that your R2 bucket allows CORS from this origin.");
+        return;
+      }
+      await complete.mutateAsync({
+        workspaceId: workspace.id,
+        taskId,
+        fileName: file.name,
+        mimeType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+        key: prep.key,
+      });
+      await utils.task.get.invalidate({ workspaceId: workspace.id, taskId });
+      await utils.billing.summary.invalidate({ workspaceId: workspace.id });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Upload failed";
+      setError(msg);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs font-medium text-muted-foreground">Attachments</p>
+        <div className="flex items-center gap-2">
+          <input
+            ref={inputRef}
+            type="file"
+            className="hidden"
+            onChange={(e) => void onFileChange(e)}
+          />
+          <button
+            type="button"
+            disabled={uploading || prepare.isPending || complete.isPending}
+            onClick={() => inputRef.current?.click()}
+            className="inline-flex items-center gap-1 rounded-md border border-dashed border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors disabled:opacity-50"
+          >
+            {uploading || prepare.isPending || complete.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Paperclip className="h-3.5 w-3.5" />
+            )}
+            Add file
+          </button>
+        </div>
+      </div>
+      {error ? <p className="text-xs text-destructive mb-2">{error}</p> : null}
+      {attachments.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No files yet.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {attachments.map((a) => (
+            <li
+              key={a.id}
+              className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-2 py-1.5 text-sm"
+            >
+              <a
+                href={a.url}
+                target="_blank"
+                rel="noreferrer"
+                className="min-w-0 flex items-center gap-1.5 text-primary hover:underline"
+              >
+                <Link2 className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{a.name}</span>
+                <span className="text-xs text-muted-foreground shrink-0">
+                  {formatFileSize(a.size)}
+                </span>
+              </a>
+              <button
+                type="button"
+                disabled={remove.isPending}
+                onClick={() =>
+                  remove.mutate(
+                    { workspaceId: workspace.id, attachmentId: a.id },
+                    {
+                      onSuccess: async () => {
+                        await utils.task.get.invalidate({ workspaceId: workspace.id, taskId });
+                        await utils.billing.summary.invalidate({ workspaceId: workspace.id });
+                      },
+                    },
+                  )
+                }
+                className="shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                title="Remove attachment"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
@@ -409,6 +783,14 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
             <span className="w-20 shrink-0 text-xs text-muted-foreground">Due date</span>
             <DueDatePicker
               value={task.dueDate ? new Date(task.dueDate) : null}
+              dueTime={task.dueTime}
+              onDueTimeChange={(hasTime) =>
+                updateTask.mutate({
+                  id: task.id,
+                  workspaceId: workspace.id,
+                  dueTime: hasTime,
+                })
+              }
               onChange={(date) =>
                 updateTask.mutate({
                   id: task.id,
@@ -457,6 +839,13 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
               }
             />
           </div>
+
+          <TaskRecurrenceEditor
+            taskId={task.id}
+            workspaceId={workspace.id}
+            isRecurring={task.isRecurring}
+            recurrenceRuleStr={task.recurrenceRule}
+          />
         </div>
 
         {/* Divider */}
@@ -467,6 +856,11 @@ function TaskDetailContent({ taskId }: { taskId: string }) {
           <p className="mb-2 text-xs font-medium text-muted-foreground">Description</p>
           <EditorContent editor={editor} />
         </div>
+
+        {/* Divider */}
+        <div className="border-t border-border" />
+
+        <TaskAttachments taskId={task.id} attachments={task.attachments} />
 
         {/* Divider */}
         <div className="border-t border-border" />

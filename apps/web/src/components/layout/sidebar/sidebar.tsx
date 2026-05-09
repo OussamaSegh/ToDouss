@@ -21,12 +21,18 @@ interface SidebarProps {
   onNavigate?: () => void;
 }
 
-const NAV_ITEMS = (slug: string) => [
-  { href: `/${slug}/inbox`, icon: "inbox" as const, label: "Inbox" },
-  { href: `/${slug}/today`, icon: "today" as const, label: "Today" },
-  { href: `/${slug}/upcoming`, icon: "upcoming" as const, label: "Upcoming" },
-  { href: `/${slug}/search`, icon: "search" as const, label: "Search" },
-];
+function navItemsForWorkspace(slug: string) {
+  const items: { href: string; icon: "inbox" | "today" | "upcoming" | "search" | "calendar"; label: string }[] = [
+    { href: `/${slug}/inbox`, icon: "inbox", label: "Inbox" },
+    { href: `/${slug}/today`, icon: "today", label: "Today" },
+    { href: `/${slug}/upcoming`, icon: "upcoming", label: "Upcoming" },
+  ];
+  if (featureFlags.calendarView) {
+    items.push({ href: `/${slug}/calendar`, icon: "calendar", label: "Calendar" });
+  }
+  items.push({ href: `/${slug}/search`, icon: "search", label: "Search" });
+  return items;
+}
 
 export function Sidebar({
   workspace,
@@ -132,7 +138,7 @@ export function Sidebar({
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
-        {NAV_ITEMS(workspace.slug).map(({ href, icon, label }) => (
+        {navItemsForWorkspace(workspace.slug).map(({ href, icon, label }) => (
           <Link
             key={href}
             href={href}

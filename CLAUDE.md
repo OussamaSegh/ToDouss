@@ -6,14 +6,16 @@ ToDouss is a full-stack SaaS todo/project management app built as a pnpm monorep
 ## Monorepo Structure
 
 ```
-apps/web/          # Next.js 16 (App Router, RSC) — main application
-apps/workers/      # BullMQ background job workers (future)
-packages/db/       # Prisma schema + client (@todouss/db)
-packages/trpc/     # tRPC routers + context (@todouss/trpc)
-packages/ui/       # Shared component library (@todouss/ui)
-packages/validators/ # Zod schemas shared client+server (@todouss/validators)
-tooling/tsconfig/  # Shared TypeScript configs
-tooling/eslint/    # Shared ESLint flat configs
+apps/web/           # Next.js 16 (App Router, RSC) — main application
+apps/workers/       # BullMQ workers: reminders, recurring tasks, outbound webhooks
+packages/db/        # Prisma schema + client (@todouss/db)
+packages/trpc/      # tRPC routers + context (@todouss/trpc)
+packages/billing/   # Plan limits + storage labels (@todouss/billing)
+packages/storage/   # R2 / S3-compatible presigned uploads (@todouss/storage)
+packages/ui/        # Shared component library (@todouss/ui)
+packages/validators/# Zod schemas shared client+server (@todouss/validators)
+tooling/tsconfig/   # Shared TypeScript configs
+tooling/eslint/     # Shared ESLint flat configs
 ```
 
 ## Critical Conventions
@@ -67,11 +69,15 @@ Every mutating tRPC hook must follow this 5-step pattern:
 - Compare `updatedAt` timestamps to ignore stale events
 
 ### Billing & Plans
-- Plan limits enforced in tRPC middleware before create operations
-- Plan definitions: `apps/web/src/lib/stripe/plans.ts`
-- FREE: 5 projects, 1 member, 100 MB
-- PRO: $8/mo — unlimited projects, 5 GB
-- BUSINESS: $16/seat/mo — unlimited everything
+- Plan limits enforced in tRPC (see `packages/trpc/src/lib/plan-limits.ts`) before relevant create operations
+- Plan definitions and formatting: `packages/billing` (re-exported from `apps/web/src/lib/stripe/plans.ts` for UI)
+- FREE: 5 projects, 2 members, 100 MB
+- PRO: unlimited projects/members, 5 GB
+- BUSINESS / ENTERPRISE: unlimited storage
+
+### API keys & webhooks
+- REST: `apps/web/src/app/api/v1/tasks/route.ts` — `Authorization: Bearer td_live_…`
+- Signed webhook payloads: `packages/trpc/src/lib/dispatch-workspace-webhook.ts` (`X-ToDouss-Signature`, `X-ToDouss-Event`)
 
 ### Commit Convention
 ```
@@ -94,7 +100,9 @@ refactor: extract optimistic update pattern to hook
 | App shell | `apps/web/src/components/layout/app-shell.tsx` |
 | Sidebar | `apps/web/src/components/layout/sidebar/sidebar.tsx` |
 | Workspace layout | `apps/web/src/app/(app)/[workspaceSlug]/layout.tsx` |
-| Plan definitions | `apps/web/src/lib/stripe/plans.ts` |
+| Plan module | `packages/billing/src/plans.ts` |
+| Workspace settings UI | `apps/web/src/app/(app)/[workspaceSlug]/settings/page.tsx` |
+| BullMQ workers entry | `apps/workers/src/index.ts` |
 
 ## Running the Project
 
@@ -111,6 +119,12 @@ pnpm dev
 # Run just the Next.js app
 pnpm --filter @todouss/web dev
 
+# Background workers (needs REDIS_URL)
+pnpm workers:dev
+
+# Unit tests (packages with a `test` script)
+pnpm test
+
 # Run type checking across all packages
 pnpm typecheck
 
@@ -123,14 +137,15 @@ Copy `.env.example` to `.env.local` and fill in:
 - `DATABASE_URL` + `DIRECT_URL` (Supabase)
 - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY`
 - `CLERK_WEBHOOK_SECRET` (from Clerk dashboard → Webhooks)
-- All others can be added when implementing each feature
+- `REDIS_URL` — TCP Redis URL for `apps/workers` (e.g. `redis://localhost:6379`)
+- Stripe, Pusher, R2, Resend keys as needed (see `.env.example`)
 
 ## Implementation Phases
-- **Phase 0** ✅ Foundation (monorepo, auth, app shell) — CURRENT
-- **Phase 1** Core Task Engine (list/board views, NLP, DnD, optimistic updates)
-- **Phase 2** Collaboration (comments, @mentions, real-time, invites)
-- **Phase 3** Advanced Views (calendar, timeline, table, filters, recurring)
-- **Phase 4** Monetization (Stripe billing, usage limits, pricing page)
-- **Phase 5** Email & Onboarding (Resend, BullMQ workers, web push)
-- **Phase 6** API & Integrations (REST API, webhooks, Slack, GitHub)
-- **Phase 7** Scale & Hardening (Sentry, PostHog, Typesense, i18n)
+- **Phase 0** Foundation — monorepo, Clerk auth, app shell
+- **Phase 1** Core task engine — lists, board, optimistic updates, task detail
+- **Phase 2** Collaboration — comments, invites, team visibility (`packages/db/src/visibility.ts`)
+- **Phase 3** Advanced views — calendar, timeline, table, saved views
+- **Phase 4** Monetization — Stripe checkout/portal/webhooks, `packages/billing` limits
+- **Phase 5** Background jobs — `apps/workers` (BullMQ), attachments via R2
+- **Phase 6** API & integrations — REST v1, API keys, workspace webhooks
+- **Phase 7** Scale & hardening — broader tests, Sentry/PostHog, search/i18n (incremental)

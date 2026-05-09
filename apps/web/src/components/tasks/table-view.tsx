@@ -3,19 +3,26 @@
 import { format } from "date-fns";
 import { trpc } from "@/lib/trpc/provider";
 import { useWorkspace } from "@/lib/workspace-context";
+import type { AdvancedTaskFilters } from "@/components/tasks/advanced-filter-toolbar";
+import { trpcFiltersFromAdvanced } from "@/lib/task-filters";
 
 interface TableViewProps {
   projectId: string;
+  advancedFilters?: AdvancedTaskFilters;
 }
 
-export function TableView({ projectId }: TableViewProps) {
+export function TableView({ projectId, advancedFilters }: TableViewProps) {
   const workspace = useWorkspace();
+  const advQ = trpcFiltersFromAdvanced(
+    advancedFilters ?? { assigneeId: [], labelIds: [], status: [], priority: [] },
+  );
   const { data } = trpc.task.tableList.useQuery({
     workspaceId: workspace.id,
     projectId,
     limit: 100,
     isArchived: false,
     includeCompleted: true,
+    ...advQ,
   });
 
   return (

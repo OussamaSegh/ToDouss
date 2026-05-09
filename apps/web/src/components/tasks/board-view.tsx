@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, type MutableRefObject } from "react";
+import { useMemo, useRef, useState, type MutableRefObject } from "react";
 import { cn } from "@todouss/ui";
 import {
   DndContext,
@@ -22,11 +22,14 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, MessageSquare } from "lucide-react";
+import { GripVertical, MessageSquare, Plus } from "lucide-react";
 import { trpc } from "@/lib/trpc/provider";
 import { useWorkspace } from "@/lib/workspace-context";
+import type { AdvancedTaskFilters } from "@/components/tasks/advanced-filter-toolbar";
+import { trpcFiltersFromAdvanced } from "@/lib/task-filters";
 import { useUpdateTask, useReorderTask } from "@/hooks/use-task-mutations";
 import { useTaskStore } from "@/stores/task-store";
+import { QuickAdd } from "@/components/tasks/quick-add";
 import { PriorityBadge } from "@/components/shared/priority-badge";
 import { format, isToday, isTomorrow, isPast } from "date-fns";
 import type { inferRouterOutputs } from "@trpc/server";
@@ -164,12 +167,22 @@ function BoardColumn({
   headerClass,
   tasks,
   lastDragEndedAt,
+  workspaceId,
+  projectId,
+  showQuickAdd,
+  onRequestQuickAdd,
+  onCloseQuickAdd,
 }: {
   status: TaskStatus;
   label: string;
   headerClass: string;
   tasks: TaskListItem[];
   lastDragEndedAt: MutableRefObject<number>;
+  workspaceId: string;
+  projectId: string;
+  showQuickAdd: boolean;
+  onRequestQuickAdd: () => void;
+  onCloseQuickAdd: () => void;
 }) {
   const dropId = boardColumnDropId(status);
   const { setNodeRef: setDropRef, isOver } = useDroppable({
@@ -198,6 +211,25 @@ function BoardColumn({
             <BoardCard key={task.id} task={task} lastDragEndedAt={lastDragEndedAt} />
           ))}
         </div>
+        {showQuickAdd ? (
+          <QuickAdd
+            workspaceId={workspaceId}
+            projectId={projectId}
+            defaultStatus={status}
+            slotKey={`board-${status}`}
+            onClose={onCloseQuickAdd}
+            className="mx-0 my-2"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={onRequestQuickAdd}
+            className="mt-2 flex w-full items-center gap-1.5 rounded-md border border-dashed border-border px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5 shrink-0" />
+            Add task
+          </button>
+        )}
       </div>
     </div>
   );
@@ -206,10 +238,15 @@ function BoardColumn({
 interface BoardViewProps {
   projectId: string;
   className?: string;
+  advancedFilters?: AdvancedTaskFilters;
 }
 
-export function BoardView({ projectId, className }: BoardViewProps) {
+export function BoardView({ projectId, className, advancedFilters }: BoardViewProps) {
   const workspace = useWorkspace();
+  const [quickAddColumn, setQuickAddColumn] = useState<TaskStatus | null>(null);
+  const advQ = trpcFiltersFromAdvanced(
+    advancedFilters ?? { assigneeId: [], labelIds: [], status: [], priority: [] },
+  );
   const updateTask = useUpdateTask();
   const reorderTask = useReorderTask();
   const lastDragEndedAt = useRef(0);
@@ -219,6 +256,7 @@ export function BoardView({ projectId, className }: BoardViewProps) {
   const { data, isLoading } = trpc.task.list.useQuery({
     workspaceId: workspace.id,
     projectId,
+    ...advQ,
   });
 
   const tasksByStatus = useMemo(() => {
@@ -342,6 +380,11 @@ export function BoardView({ projectId, className }: BoardViewProps) {
                 headerClass={col.headerClass}
                 tasks={tasksByStatus[col.status]}
                 lastDragEndedAt={lastDragEndedAt}
+                workspaceId={workspace.id}
+                projectId={projectId}
+                showQuickAdd={quickAddColumn === col.status}
+                onRequestQuickAdd={() => setQuickAddColumn(col.status)}
+                onCloseQuickAdd={() => setQuickAddColumn(null)}
               />
             ))}
           </div>

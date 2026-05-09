@@ -10,6 +10,7 @@ import {
 import { createTRPCRouter, protectedProcedure, workspaceProcedure } from "../trpc";
 import { ensureDbUser } from "../lib/ensure-db-user";
 import { publishWorkspaceEvent } from "../lib/realtime";
+import { assertCanAddWorkspaceMember } from "../lib/plan-limits";
 
 function canManageInvites(role: "OWNER" | "ADMIN" | "MEMBER" | "VIEWER") {
   return role === "OWNER" || role === "ADMIN";
@@ -41,6 +42,8 @@ export const inviteRouter = createTRPCRouter({
         throw new TRPCError({ code: "FORBIDDEN" });
       }
       const dbUser = await ensureDbUser(ctx);
+
+      await assertCanAddWorkspaceMember(ctx.db, ctx.workspaceId, ctx.workspace.plan);
 
       const existingMember = await ctx.db.user.findUnique({
         where: { email: input.email.toLowerCase() },
@@ -200,6 +203,8 @@ export const inviteRouter = createTRPCRouter({
           message: "Invite email does not match your account",
         });
       }
+
+      await assertCanAddWorkspaceMember(ctx.db, invite.workspaceId, invite.workspace.plan);
 
       await ctx.db.$transaction(async (tx) => {
         await tx.workspaceMember.upsert({

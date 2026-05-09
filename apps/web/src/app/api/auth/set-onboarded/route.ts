@@ -4,9 +4,9 @@ import { cookies } from "next/headers";
 
 /**
  * Called client-side after completeOnboarding succeeds.
- * Verifies the user is genuinely onboarded in the DB, then sets a
- * plain `onboarded` cookie that the middleware can read synchronously —
- * avoiding Clerk JWT cache timing issues.
+ * Verifies the user has completed onboarding (onboardedAt) or already belongs
+ * to a workspace (e.g. invite acceptance), then sets the `onboarded` cookie
+ * middleware uses so they are not forced through /onboarding on every login.
  */
 export async function POST() {
   const { userId } = await auth();
@@ -16,10 +16,19 @@ export async function POST() {
 
   const dbUser = await db.user.findUnique({
     where: { clerkId: userId },
-    select: { onboardedAt: true },
+    select: { id: true, onboardedAt: true },
   });
 
-  if (!dbUser?.onboardedAt) {
+  if (!dbUser) {
+    return new Response("User not synced", { status: 403 });
+  }
+
+  const hasWorkspace =
+    (await db.workspaceMember.count({
+      where: { userId: dbUser.id },
+    })) > 0;
+
+  if (!dbUser.onboardedAt && !hasWorkspace) {
     return new Response("Not onboarded", { status: 403 });
   }
 

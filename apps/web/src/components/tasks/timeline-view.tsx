@@ -3,13 +3,19 @@
 import { format } from "date-fns";
 import { trpc } from "@/lib/trpc/provider";
 import { useWorkspace } from "@/lib/workspace-context";
+import type { AdvancedTaskFilters } from "@/components/tasks/advanced-filter-toolbar";
+import { trpcFiltersFromAdvanced } from "@/lib/task-filters";
 
 interface TimelineViewProps {
   projectId: string;
+  advancedFilters?: AdvancedTaskFilters;
 }
 
-export function TimelineView({ projectId }: TimelineViewProps) {
+export function TimelineView({ projectId, advancedFilters }: TimelineViewProps) {
   const workspace = useWorkspace();
+  const advQ = trpcFiltersFromAdvanced(
+    advancedFilters ?? { assigneeId: [], labelIds: [], status: [], priority: [] },
+  );
   const from = new Date();
   const to = new Date();
   to.setDate(to.getDate() + 30);
@@ -19,6 +25,7 @@ export function TimelineView({ projectId }: TimelineViewProps) {
     projectId,
     from,
     to,
+    ...advQ,
   });
 
   return (

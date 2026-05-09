@@ -8,11 +8,22 @@ import {
   updateSavedViewSchema,
 } from "@todouss/validators";
 import { createTRPCRouter, workspaceProcedure } from "../trpc";
+import { assertProjectIdAccessible } from "../lib/task-project-scope";
 
 export const savedViewRouter = createTRPCRouter({
   list: workspaceProcedure.input(listSavedViewSchema).query(async ({ ctx, input }) => {
     const dbUser = await ctx.db.user.findUnique({ where: { clerkId: ctx.userId } });
     if (!dbUser) throw new TRPCError({ code: "NOT_FOUND" });
+
+    if (input.projectId) {
+      await assertProjectIdAccessible(
+        ctx.db,
+        ctx.workspaceId,
+        ctx.member.userId,
+        ctx.member.role,
+        input.projectId,
+      );
+    }
 
     return ctx.db.savedView.findMany({
       where: {
@@ -29,6 +40,16 @@ export const savedViewRouter = createTRPCRouter({
   create: workspaceProcedure.input(createSavedViewSchema).mutation(async ({ ctx, input }) => {
     const dbUser = await ctx.db.user.findUnique({ where: { clerkId: ctx.userId } });
     if (!dbUser) throw new TRPCError({ code: "NOT_FOUND" });
+
+    if (input.projectId) {
+      await assertProjectIdAccessible(
+        ctx.db,
+        ctx.workspaceId,
+        ctx.member.userId,
+        ctx.member.role,
+        input.projectId,
+      );
+    }
 
     const maxOrder = await ctx.db.savedView.findFirst({
       where: { workspaceId: ctx.workspaceId, projectId: input.projectId ?? null, creatorId: dbUser.id },
@@ -94,6 +115,16 @@ export const savedViewRouter = createTRPCRouter({
     });
     if (!view) throw new TRPCError({ code: "NOT_FOUND" });
     if (!view.isShared && view.creatorId !== dbUser.id) throw new TRPCError({ code: "FORBIDDEN" });
+
+    if (view.projectId) {
+      await assertProjectIdAccessible(
+        ctx.db,
+        ctx.workspaceId,
+        ctx.member.userId,
+        ctx.member.role,
+        view.projectId,
+      );
+    }
 
     return view;
   }),

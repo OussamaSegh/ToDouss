@@ -249,15 +249,37 @@ export function useUpdateTask() {
       });
 
       // Patch detail
+      function optimisticRecurrenceRule(
+        rule: typeof input.recurrenceRule,
+      ): string | null | undefined {
+        if (rule === undefined) return undefined;
+        if (rule === null) return null;
+        return JSON.stringify({
+          interval: 1,
+          timezone: "UTC",
+          ...rule,
+          ...(rule.until
+            ? {
+                until: rule.until instanceof Date ? rule.until.toISOString() : rule.until,
+              }
+            : {}),
+        });
+      }
+
       if (detailSnapshot) {
+        const rec = optimisticRecurrenceRule(input.recurrenceRule);
         const patched: TaskGetOutput = {
           ...detailSnapshot,
           ...(input.title !== undefined ? { title: input.title } : {}),
           ...(input.status !== undefined ? { status: input.status } : {}),
           ...(input.priority !== undefined ? { priority: input.priority } : {}),
           ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
+          ...(input.startDate !== undefined ? { startDate: input.startDate } : {}),
+          ...(input.dueTime !== undefined ? { dueTime: input.dueTime } : {}),
           ...(input.description !== undefined ? { description: input.description } : {}),
           ...(input.assigneeId !== undefined ? { assigneeId: input.assigneeId } : {}),
+          ...(input.isRecurring !== undefined ? { isRecurring: input.isRecurring } : {}),
+          ...(rec !== undefined ? { recurrenceRule: rec } : {}),
           ...(input.completedAt !== undefined ? {} : {}),
           updatedAt: new Date(),
         };
@@ -268,6 +290,7 @@ export function useUpdateTask() {
       }
 
       // Patch all list / today / upcoming caches
+      const recRule = optimisticRecurrenceRule(input.recurrenceRule);
       const listSnap = snapshotAndPatchLists(queryClient, (task) => {
         if (task.id !== input.id) return task;
         return {
@@ -276,11 +299,15 @@ export function useUpdateTask() {
           ...(input.status !== undefined ? { status: input.status } : {}),
           ...(input.priority !== undefined ? { priority: input.priority } : {}),
           ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
+          ...(input.startDate !== undefined ? { startDate: input.startDate } : {}),
+          ...(input.dueTime !== undefined ? { dueTime: input.dueTime } : {}),
           ...(input.assigneeId !== undefined ? { assigneeId: input.assigneeId } : {}),
           ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
           ...(input.sectionId !== undefined ? { sectionId: input.sectionId } : {}),
           ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
           ...(input.boardOrder !== undefined ? { boardOrder: input.boardOrder } : {}),
+          ...(input.isRecurring !== undefined ? { isRecurring: input.isRecurring } : {}),
+          ...(recRule !== undefined ? { recurrenceRule: recRule } : {}),
           updatedAt: new Date(),
         };
       });

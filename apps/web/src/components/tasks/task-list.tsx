@@ -24,6 +24,8 @@ import { QuickAdd } from "./quick-add";
 import { Plus, ChevronDown } from "lucide-react";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@todouss/trpc";
+import type { AdvancedTaskFilters } from "@/components/tasks/advanced-filter-toolbar";
+import { trpcFiltersFromAdvanced } from "@/lib/task-filters";
 
 type RouterOutput = inferRouterOutputs<AppRouter>;
 type TaskListItem = RouterOutput["task"]["list"]["tasks"][number];
@@ -52,6 +54,7 @@ interface TaskListProps {
   projectId?: string;
   groupBy?: GroupBy;
   className?: string;
+  advancedFilters?: AdvancedTaskFilters;
 }
 
 function SortableTaskItem({
@@ -96,8 +99,16 @@ export function TaskList({
   projectId,
   groupBy = "none",
   className,
+  advancedFilters,
 }: TaskListProps) {
   const workspace = useWorkspace();
+  const adv = advancedFilters ?? {
+    assigneeId: [],
+    labelIds: [],
+    status: [],
+    priority: [],
+  };
+  const advQ = trpcFiltersFromAdvanced(adv);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const reorderTask = useReorderTask();
 
@@ -110,9 +121,10 @@ export function TaskList({
       workspaceId: workspace.id,
       ...(projectId ? { projectId } : {}),
       ...(filter === "inbox" ? { status: ["INBOX"] } : {}),
-      ...(filter === "project"
+      ...(filter === "project" && !adv.status.length
         ? { status: ["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"] }
         : {}),
+      ...advQ,
     },
     { enabled: filter !== "today" && filter !== "upcoming" },
   );

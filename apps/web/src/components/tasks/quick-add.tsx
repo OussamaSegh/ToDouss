@@ -19,6 +19,11 @@ interface QuickAddProps {
   projectId?: string;
   workspaceId: string;
   defaultStatus?: TaskStatus;
+  /** When opening from calendar, pre-fill due date / time */
+  initialDueDate?: Date | null;
+  initialDueTime?: boolean;
+  /** Change when opening a new slot so effect re-runs */
+  slotKey?: string;
   onClose: () => void;
   className?: string;
 }
@@ -27,6 +32,9 @@ export function QuickAdd({
   projectId,
   workspaceId,
   defaultStatus = "TODO",
+  initialDueDate,
+  initialDueTime = false,
+  slotKey,
   onClose,
   className,
 }: QuickAddProps) {
@@ -40,6 +48,13 @@ export function QuickAdd({
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    if (initialDueDate) {
+      setDetectedDate(initialDueDate);
+      setCleanTitle("");
+    }
+  }, [initialDueDate, slotKey]);
 
   function parseTitle(raw: string) {
     if (!chrono || !raw.trim()) {
@@ -79,7 +94,8 @@ export function QuickAdd({
         title: finalTitle,
         status: defaultStatus,
         priority: "P4",
-        dueDate: detectedDate ?? undefined,
+        dueDate: detectedDate ?? initialDueDate ?? undefined,
+        dueTime: Boolean(initialDueTime && (detectedDate ?? initialDueDate)),
       });
       setTitle("");
       setDetectedDate(null);
