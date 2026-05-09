@@ -2,7 +2,9 @@ import path from "node:path";
 import type { NextConfig } from "next";
 
 /** Monorepo root — `pnpm build` / Vercel run this from `apps/web`. */
-const outputFileTracingRoot = path.resolve(process.cwd(), "../..");
+const monorepoRoot = path.resolve(process.cwd(), "../..");
+/** Resolved from `outputFileTracingRoot` (repo root), not `apps/web`. */
+const prismaClientBundle = "./packages/db/src/generated/client/**/*";
 
 const nextConfig: NextConfig = {
   transpilePackages: [
@@ -13,11 +15,10 @@ const nextConfig: NextConfig = {
   ],
   // Prisma Query Engine (.node/.wasm): keep Node resolution + avoid stripping binaries from the server bundle (Vercel).
   serverExternalPackages: ["@prisma/client", "prisma"],
-  outputFileTracingRoot,
-  // Paths are relative to this Next app root (`apps/web`). Keys are route globs; include nested App Router routes, not only one segment.
+  outputFileTracingRoot: monorepoRoot,
   outputFileTracingIncludes: {
-    "/*": ["../../packages/db/src/generated/client/**/*"],
-    "/**": ["../../packages/db/src/generated/client/**/*"],
+    "/*": [prismaClientBundle],
+    "/**": [prismaClientBundle],
   },
   images: {
     remotePatterns: [
