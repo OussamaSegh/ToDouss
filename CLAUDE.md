@@ -94,7 +94,7 @@ refactor: extract optimistic update pattern to hook
 | tRPC procedures | `packages/trpc/src/routers/*.ts` |
 | Prisma schema | `packages/db/prisma/schema.prisma` |
 | DB client | `packages/db/src/client.ts` |
-| Clerk middleware | `apps/web/src/middleware.ts` |
+| Clerk proxy (auth edge) | `apps/web/src/proxy.ts` |
 | tRPC API route | `apps/web/src/app/api/trpc/[trpc]/route.ts` |
 | tRPC React provider | `apps/web/src/lib/trpc/provider.tsx` |
 | App shell | `apps/web/src/components/layout/app-shell.tsx` |
