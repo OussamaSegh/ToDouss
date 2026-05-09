@@ -5,7 +5,7 @@
   "packageManager": "pnpm@10.33.2",
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "pnpm --filter @todouss/db run db:generate && next build",
+    "build": "next build",
     "start": "next start",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
