@@ -8,6 +8,7 @@
     "./test-helpers": "./src/test-helpers.ts"
   },
   "scripts": {
+    "postinstall": "prisma generate",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:push": "prisma db push",

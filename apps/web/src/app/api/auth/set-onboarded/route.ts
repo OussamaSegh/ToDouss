@@ -1,5 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
+import { TRPCError } from "@trpc/server";
 import { db } from "@todouss/db";
+import { ensureDbUser } from "@todouss/trpc/ensure-db-user";
 import { cookies } from "next/headers";
 
 /**
@@ -14,13 +16,17 @@ export async function POST() {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const dbUser = await db.user.findUnique({
-    where: { clerkId: userId },
-    select: { id: true, onboardedAt: true },
-  });
-
-  if (!dbUser) {
-    return new Response("User not synced", { status: 403 });
+  let dbUser: { id: string; onboardedAt: Date | null };
+  try {
+    const row = await ensureDbUser({ db, userId });
+    dbUser = { id: row.id, onboardedAt: row.onboardedAt ?? null };
+  } catch (e) {
+    if (e instanceof TRPCError) {
+      const status =
+        e.code === "UNAUTHORIZED" ? 401 : e.code === "BAD_REQUEST" ? 400 : 503;
+      return new Response(e.message, { status });
+    }
+    throw e;
   }
 
   const hasWorkspace =

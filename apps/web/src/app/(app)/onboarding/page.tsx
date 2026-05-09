@@ -10,7 +10,13 @@ type Step = 1 | 2;
 
 export default function OnboardingPage() {
   const { user } = useUser();
-  const { data: workspaces, isPending: workspacesLoading } = trpc.workspace.list.useQuery();
+  const {
+    data: workspaces,
+    isPending: workspacesLoading,
+    isError: workspacesError,
+    error: workspacesErrorDetail,
+    refetch: refetchWorkspaces,
+  } = trpc.workspace.list.useQuery();
   const [existingWorkspaceRedirectFailed, setExistingWorkspaceRedirectFailed] = useState(false);
 
   /** Already in at least one workspace — refresh session cookie and skip create flow. */
@@ -28,6 +34,8 @@ export default function OnboardingPage() {
       }
     })();
   }, [workspaces, workspacesLoading, existingWorkspaceRedirectFailed]);
+
+  const hasExistingWorkspaces = Boolean(workspaces && workspaces.length > 0);
 
   const [step, setStep] = useState<Step>(1);
   const urlHost = useSyncExternalStore(
@@ -85,7 +93,55 @@ export default function OnboardingPage() {
 
   const isLoading = createWorkspace.isPending || completeOnboarding.isPending;
 
-  if (workspacesLoading || (workspaces && workspaces.length > 0 && !existingWorkspaceRedirectFailed)) {
+  async function retryExistingWorkspaceSignIn() {
+    setExistingWorkspaceRedirectFailed(false);
+    await refetchWorkspaces();
+  }
+
+  if (workspacesError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">
+        <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 shadow-sm text-center space-y-4">
+          <p className="text-sm text-destructive">
+            {workspacesErrorDetail.message || "Could not load your workspaces."}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            If you just deployed, check the database connection and try again.
+          </p>
+          <button
+            type="button"
+            onClick={() => void refetchWorkspaces()}
+            className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (hasExistingWorkspaces && existingWorkspaceRedirectFailed) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">
+        <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 shadow-sm text-center space-y-4">
+          <h1 className="text-lg font-semibold">Could not finish sign-in</h1>
+          <p className="text-sm text-muted-foreground">
+            You already have a workspace, but we couldn&apos;t set your session cookie. Try again, or sign out and
+            back in.
+          </p>
+          <button
+            type="button"
+            onClick={() => void retryExistingWorkspaceSignIn()}
+            className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (workspacesLoading || (hasExistingWorkspaces && !existingWorkspaceRedirectFailed)) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4 text-sm text-muted-foreground">
         Signing you in…

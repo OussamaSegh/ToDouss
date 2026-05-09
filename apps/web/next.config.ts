@@ -11,12 +11,13 @@ const nextConfig: NextConfig = {
     "@todouss/ui",
     "@todouss/validators",
   ],
-  // Prisma Query Engine (.node): keep Node resolution + avoid stripping binaries from the server bundle (Vercel).
+  // Prisma Query Engine (.node/.wasm): keep Node resolution + avoid stripping binaries from the server bundle (Vercel).
   serverExternalPackages: ["@prisma/client", "prisma"],
   outputFileTracingRoot,
-  // Paths are relative to this Next app root (`apps/web`); include resolves against tracing root + app root per Next docs.
+  // Paths are relative to this Next app root (`apps/web`). Keys are route globs; include nested App Router routes, not only one segment.
   outputFileTracingIncludes: {
     "/*": ["../../packages/db/src/generated/client/**/*"],
+    "/**": ["../../packages/db/src/generated/client/**/*"],
   },
   images: {
     remotePatterns: [

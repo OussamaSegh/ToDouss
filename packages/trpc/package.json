@@ -7,7 +7,8 @@
     "./server": "./src/server.ts",
     "./recurrence": "./src/lib/recurrence.ts",
     "./task-scope": "./src/lib/task-project-scope.ts",
-    "./crypto-keys": "./src/lib/crypto-keys.ts"
+    "./crypto-keys": "./src/lib/crypto-keys.ts",
+    "./ensure-db-user": "./src/lib/ensure-db-user.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

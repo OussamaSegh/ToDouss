@@ -53,8 +53,8 @@ export const workspaceRouter = createTRPCRouter({
   }),
 
   list: protectedProcedure.query(async ({ ctx }) => {
-    const dbUser = await ctx.db.user.findUnique({ where: { clerkId: ctx.userId! } });
-    if (!dbUser) return []; // not yet synced, return empty gracefully
+    // Ensures a row exists even if the Clerk `user.created` webhook is slow or misconfigured.
+    const dbUser = await ensureDbUser(ctx);
 
     const memberships = await ctx.db.workspaceMember.findMany({
       where: { userId: dbUser.id },
